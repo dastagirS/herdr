@@ -482,6 +482,19 @@ impl ClientShellState {
     pub(crate) fn set_snapshot(&mut self, snapshot: Box<ClientShellSnapshot>) {
         let endpoint_id = self.active_endpoint_id.clone();
         self.set_endpoint_snapshot(&endpoint_id, snapshot);
+        // Existing unit tests use this shorthand for an expanded projection; the default
+        // collapsed behavior is covered through set_endpoint_snapshot below.
+        if endpoint_id.is_local() {
+            self.collapsed_groups.clear();
+            self.expanded_groups.clear();
+        } else {
+            if let Some(groups) = self.remote_collapsed_groups.get_mut(&endpoint_id) {
+                groups.clear();
+            }
+            if let Some(groups) = self.remote_expanded_groups.get_mut(&endpoint_id) {
+                groups.clear();
+            }
+        }
     }
 
     #[cfg(test)]
@@ -567,6 +580,7 @@ impl ClientShellState {
         {
             return;
         }
+        self.sync_collapsed_groups_for_endpoint(endpoint_id, &snapshot);
         let boot_changed = self.endpoints[index]
             .snapshot
             .as_deref()

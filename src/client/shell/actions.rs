@@ -937,7 +937,8 @@ impl ClientShellState {
                     .get(entries.get(index)?.index)?
                     .workspace_id
                     .clone();
-                self.reveal_workspace(&workspace_id);
+                let endpoint_id = self.active_endpoint_id.clone();
+                self.reveal_workspace(&endpoint_id, &workspace_id);
                 Some(Method::WorkspaceFocus(WorkspaceTarget { workspace_id }))
             }
             KeybindAction::PreviousWorkspace | KeybindAction::NextWorkspace => {
@@ -960,7 +961,8 @@ impl ClientShellState {
                 let workspace_id = snapshot.workspaces[entries[next].index]
                     .workspace_id
                     .clone();
-                self.reveal_workspace(&workspace_id);
+                let endpoint_id = self.active_endpoint_id.clone();
+                self.reveal_workspace(&endpoint_id, &workspace_id);
                 Some(Method::WorkspaceFocus(WorkspaceTarget { workspace_id }))
             }
             KeybindAction::SwitchTab(index) => {

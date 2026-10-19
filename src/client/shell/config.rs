@@ -32,18 +32,40 @@ impl ClientShellState {
         };
         let mut collapsed_groups = self.collapsed_groups.iter().cloned().collect::<Vec<_>>();
         collapsed_groups.sort();
-        let mut remote_collapsed_groups = self
+        let mut expanded_groups = self.expanded_groups.iter().cloned().collect::<Vec<_>>();
+        expanded_groups.sort();
+        let remote_endpoint_ids = self
             .remote_collapsed_groups
-            .iter()
-            .filter_map(|(endpoint_id, groups)| {
-                let ClientEndpointId::Ssh(profile_id) = endpoint_id else {
+            .keys()
+            .chain(self.remote_expanded_groups.keys())
+            .cloned()
+            .collect::<HashSet<_>>();
+        let mut remote_collapsed_groups = remote_endpoint_ids
+            .into_iter()
+            .filter_map(|endpoint_id| {
+                let ClientEndpointId::Ssh(profile_id) = endpoint_id.clone() else {
                     return None;
                 };
-                let mut collapsed_groups = groups.iter().cloned().collect::<Vec<_>>();
+                let mut collapsed_groups = self
+                    .remote_collapsed_groups
+                    .get(&endpoint_id)
+                    .into_iter()
+                    .flat_map(|groups| groups.iter().cloned())
+                    .collect::<Vec<_>>();
                 collapsed_groups.sort();
-                (!collapsed_groups.is_empty()).then(|| preferences::ClientRemoteCollapsedGroups {
-                    profile_id: profile_id.to_string(),
-                    collapsed_groups,
+                let mut expanded_groups = self
+                    .remote_expanded_groups
+                    .get(&endpoint_id)
+                    .into_iter()
+                    .flat_map(|groups| groups.iter().cloned())
+                    .collect::<Vec<_>>();
+                expanded_groups.sort();
+                (!collapsed_groups.is_empty() || !expanded_groups.is_empty()).then(|| {
+                    preferences::ClientRemoteCollapsedGroups {
+                        profile_id: profile_id.to_string(),
+                        collapsed_groups,
+                        expanded_groups,
+                    }
                 })
             })
             .collect::<Vec<_>>();
@@ -60,6 +82,7 @@ impl ClientShellState {
                 .agent_panel_sort_manual
                 .then_some(self.config.agent_panel_sort),
             collapsed_groups,
+            expanded_groups,
             remote_collapsed_groups,
         };
         if let Err(error) = preferences::store(path, preferences) {

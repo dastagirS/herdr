@@ -566,19 +566,6 @@ pub(crate) fn workspace_entries(
             folder: true,
         });
         if collapsed_groups.contains(&key) {
-            if let Some(active) = members.iter().copied().find(|index| {
-                snapshot
-                    .workspaces
-                    .get(*index)
-                    .is_some_and(|workspace| workspace.focused)
-            }) {
-                entries.push(WorkspaceEntry {
-                    index: active,
-                    indented: true,
-                    last_child: true,
-                    folder: false,
-                });
-            }
             continue;
         }
         for (member_index, member) in members.iter().copied().enumerate() {

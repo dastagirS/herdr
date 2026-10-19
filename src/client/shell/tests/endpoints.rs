@@ -70,6 +70,15 @@ fn state_with_remote() -> (ClientShellState, ClientEndpointId) {
     remote.boot_id = "remote-boot".into();
     remote.workspaces[0].label = "remote-workspace".into();
     state.set_endpoint_snapshot(&endpoint_id, Box::new(remote));
+    state
+        .remote_collapsed_groups
+        .entry(endpoint_id.clone())
+        .or_default()
+        .clear();
+    state.remote_expanded_groups.insert(
+        endpoint_id.clone(),
+        HashSet::from(["folder:/repo".to_owned(), "repo".to_owned()]),
+    );
     (state, endpoint_id)
 }
 
@@ -1065,6 +1074,15 @@ fn saved_machine_preserves_endpoint_scoped_worktree_collapses() {
     remote.focused_workspace_id = Some("remote_ws_1".into());
     add_worktree_group(&mut remote, "remote_ws_1", "remote_ws_2");
     state.set_endpoint_snapshot(&remote_id, Box::new(remote));
+    state
+        .remote_collapsed_groups
+        .entry(remote_id.clone())
+        .or_default()
+        .clear();
+    state.remote_expanded_groups.insert(
+        remote_id.clone(),
+        HashSet::from(["folder:/repo".to_owned(), "repo".to_owned()]),
+    );
 
     state.open_workspace_context_menu("ws_1".into(), 0, 0);
     let toggle_index = match state.overlay.as_ref() {
@@ -1090,12 +1108,11 @@ fn saved_machine_preserves_endpoint_scoped_worktree_collapses() {
         .workspaces
         .iter()
         .any(|hit| hit.endpoint_id == remote_id && hit.workspace_id == "remote_ws_2"));
-    let local_parent = state
+    assert!(!state
         .hits
         .workspaces
         .iter()
-        .find(|hit| hit.endpoint_id == ClientEndpointId::Local && hit.workspace_id == "ws_1")
-        .expect("local parent workspace");
+        .any(|hit| hit.endpoint_id == ClientEndpointId::Local));
     let (local_toggle, _, key) = state
         .hits
         .folder_toggles
@@ -1105,8 +1122,11 @@ fn saved_machine_preserves_endpoint_scoped_worktree_collapses() {
     assert_eq!(key, "repo");
     let buffer = frame.to_ratatui_buffer().expect("frame should reconstruct");
     assert_eq!(buffer[(local_toggle.x, local_toggle.y)].symbol(), "▸");
-    assert!(!(local_parent.rect.x..local_parent.rect.right())
-        .any(|x| buffer[(x, local_parent.rect.y)].fg == state.config.palette.red));
+    assert!(state
+        .hits
+        .folder_toggles
+        .iter()
+        .any(|(_, endpoint_id, key)| endpoint_id.is_local() && key == "repo"));
 
     assert!(state.activate_endpoint_projection(&remote_id));
     let mut remote_surface = surface();
@@ -2126,6 +2146,15 @@ fn machine_arrow_toggles_inactive_machine_without_switching() {
             state.set_endpoint_catalog(&[remote_profile(), other_profile]);
             state.set_endpoint_status(&other_id, ClientEndpointStatus::Online);
             state.set_endpoint_snapshot(&other_id, Box::new(snapshot()));
+            state
+                .remote_collapsed_groups
+                .entry(other_id.clone())
+                .or_default()
+                .clear();
+            state.remote_expanded_groups.insert(
+                other_id.clone(),
+                HashSet::from(["folder:/repo".to_owned(), "repo".to_owned()]),
+            );
             state.set_endpoint_status(&remote_id, status);
             state.sidebar_collapsed = sidebar_collapsed;
 

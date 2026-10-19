@@ -143,15 +143,22 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
     replacement.workspaces[1].agent_status = AgentStatus::Blocked;
     let mut replacement_surface = surface();
     replacement_surface.projection_revision = 2;
-    state.collapsed_groups.insert("repo".into());
     state.set_snapshot(Box::new(replacement));
+    state.collapsed_groups.insert("repo".into());
     state.set_pane_surface(replacement_surface);
     let collapsed = state.compose(106, 20).expect("collapsed worktree group");
-    let parent = state.hits.workspaces[0].rect;
-    assert!((parent.x..parent.right()).any(|x| {
-        collapsed.cells[usize::from(parent.y) * usize::from(collapsed.width) + usize::from(x)].fg
-            == crate::protocol::color_to_u32(state.config.palette.red)
-    }));
+    assert!(state.hits.workspaces.is_empty());
+    let folder_toggle = state
+        .hits
+        .folder_toggles
+        .iter()
+        .find(|(_, endpoint_id, key)| endpoint_id.is_local() && key == "repo")
+        .expect("collapsed repository folder")
+        .0;
+    let buffer = collapsed
+        .to_ratatui_buffer()
+        .expect("frame should reconstruct");
+    assert_eq!(buffer[(folder_toggle.x, folder_toggle.y)].symbol(), "▸");
 
     let mut next = ClientShellInput::default();
     state.record_binding(
@@ -164,7 +171,7 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
             if matches!(
                 &request.method,
                 crate::api::schema::Method::WorkspaceFocus(target)
-                    if target.workspace_id == "ws_2"
+                    if target.workspace_id == "ws_1"
             )
     ));
 }
@@ -223,7 +230,7 @@ fn folder_rows_deduplicate_duplicate_worktree_parents_and_collapse_children() {
         .iter()
         .map(|hit| hit.workspace_id.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(visible_ids, ["ws_1"]);
+    assert!(visible_ids.is_empty());
 
     state.collapsed_groups.clear();
     state.compose(106, 24).expect("expanded repository folder");
@@ -251,6 +258,37 @@ fn folder_rows_deduplicate_duplicate_worktree_parents_and_collapse_children() {
             if matches!(&request.method, crate::api::schema::Method::WorkspaceFocus(target)
                 if target.workspace_id == "ws_duplicate")));
 
+    let folder_toggle = state
+        .hits
+        .folder_toggles
+        .iter()
+        .find(|(_, endpoint_id, key)| endpoint_id.is_local() && key == "repo")
+        .expect("repository folder toggle")
+        .0;
+    let click_point = (folder_toggle.x, folder_toggle.y);
+    let toggle_down = state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: click_point.0,
+        row: click_point.1,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    assert!(toggle_down.repaint);
+    let click = state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        column: click_point.0,
+        row: click_point.1,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    assert!(click.actions.is_empty());
+    state
+        .compose(106, 24)
+        .expect("collapsed repository folder after arrow click");
+    assert!(state.hits.workspaces.is_empty());
+
+    state.collapsed_groups.clear();
+    state
+        .compose(106, 24)
+        .expect("expanded repository folder after arrow click");
     state.open_workspace_context_menu("ws_duplicate".into(), 0, 0);
     let toggle_index = match state.overlay.as_ref() {
         Some(ClientShellOverlay::ContextMenu(menu)) => menu
@@ -262,6 +300,39 @@ fn folder_rows_deduplicate_duplicate_worktree_parents_and_collapse_children() {
     };
     state.activate_context_menu_item(toggle_index, &mut ClientShellInput::default());
     assert!(state.collapsed_groups.contains("repo"));
+}
+
+#[test]
+fn workspace_folders_are_collapsed_by_default() {
+    let mut projected = snapshot();
+    projected.workspaces[0].worktree = Some(ClientShellWorktree {
+        key: "repo".into(),
+        label: "repo".into(),
+        is_linked_worktree: false,
+    });
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_endpoint_snapshot(&ClientEndpointId::Local, Box::new(projected));
+    state.set_pane_surface(surface());
+    state
+        .compose(106, 24)
+        .expect("default collapsed repository folder");
+
+    assert!(state.hits.workspaces.is_empty());
+    assert!(state.collapsed_groups.contains("repo"));
+
+    let toggle = state.hits.folder_toggles[0].0;
+    let outcome = state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: toggle.x,
+        row: toggle.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    assert!(outcome.repaint);
+    assert!(state.expanded_groups.contains("repo"));
+    state
+        .compose(106, 24)
+        .expect("expanded folder after default toggle");
+    assert_eq!(state.hits.workspaces.len(), 1);
 }
 
 #[test]

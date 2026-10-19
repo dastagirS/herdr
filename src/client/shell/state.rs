@@ -885,7 +885,9 @@ pub(crate) struct ClientShellState {
     pub(super) workspace_press: Option<ClientWorkspacePress>,
     pub(super) tab_press: Option<ClientTabPress>,
     pub(super) collapsed_groups: HashSet<String>,
+    pub(super) expanded_groups: HashSet<String>,
     pub(super) remote_collapsed_groups: HashMap<ClientEndpointId, HashSet<String>>,
+    pub(super) remote_expanded_groups: HashMap<ClientEndpointId, HashSet<String>>,
     pub(super) workspace_scroll: usize,
     pub(super) agent_scroll: usize,
     pub(super) pending_agent_reveal: Option<(ClientEndpointId, String)>,
@@ -1032,15 +1034,22 @@ impl ClientShellState {
             config.agent_panel_sort = sort;
         }
         let mut remote_collapsed_groups = HashMap::<ClientEndpointId, HashSet<String>>::new();
+        let mut remote_expanded_groups = HashMap::<ClientEndpointId, HashSet<String>>::new();
         for saved in preferences.remote_collapsed_groups {
             let Ok(profile_id) = crate::client::endpoint::ProfileId::parse(saved.profile_id) else {
                 continue;
             };
+            let endpoint_id = ClientEndpointId::Ssh(profile_id);
             remote_collapsed_groups
-                .entry(ClientEndpointId::Ssh(profile_id))
+                .entry(endpoint_id.clone())
                 .or_default()
                 .extend(saved.collapsed_groups);
+            remote_expanded_groups
+                .entry(endpoint_id)
+                .or_default()
+                .extend(saved.expanded_groups);
         }
+        let expanded_groups = preferences.expanded_groups.into_iter().collect();
         Self {
             machine_diagnostics: Default::default(),
             config,
@@ -1067,7 +1076,9 @@ impl ClientShellState {
             workspace_press: None,
             tab_press: None,
             collapsed_groups: preferences.collapsed_groups.into_iter().collect(),
+            expanded_groups,
             remote_collapsed_groups,
+            remote_expanded_groups,
             workspace_scroll: 0,
             agent_scroll: 0,
             pending_agent_reveal: None,
@@ -1184,15 +1195,66 @@ impl ClientShellState {
     }
 
     pub(super) fn toggle_collapsed_group(&mut self, endpoint_id: &ClientEndpointId, key: String) {
-        let groups = if endpoint_id.is_local() {
-            &mut self.collapsed_groups
+        if endpoint_id.is_local() {
+            if self.collapsed_groups.remove(&key) {
+                self.expanded_groups.insert(key);
+            } else {
+                self.expanded_groups.remove(&key);
+                self.collapsed_groups.insert(key);
+            }
+            return;
+        }
+        let was_collapsed = self
+            .remote_collapsed_groups
+            .entry(endpoint_id.clone())
+            .or_default()
+            .remove(&key);
+        let expanded_groups = self
+            .remote_expanded_groups
+            .entry(endpoint_id.clone())
+            .or_default();
+        if was_collapsed {
+            expanded_groups.insert(key);
         } else {
+            expanded_groups.remove(&key);
             self.remote_collapsed_groups
                 .entry(endpoint_id.clone())
                 .or_default()
-        };
-        if !groups.remove(&key) {
-            groups.insert(key);
+                .insert(key);
+        }
+    }
+
+    pub(super) fn sync_collapsed_groups_for_endpoint(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        snapshot: &ClientShellSnapshot,
+    ) {
+        if endpoint_id.is_local() {
+            for workspace in &snapshot.workspaces {
+                let key = super::sidebar::workspace_folder_key(workspace);
+                if self.expanded_groups.contains(&key) {
+                    self.collapsed_groups.remove(&key);
+                } else {
+                    self.collapsed_groups.insert(key);
+                }
+            }
+            return;
+        }
+        for workspace in &snapshot.workspaces {
+            let key = super::sidebar::workspace_folder_key(workspace);
+            let expanded = self
+                .remote_expanded_groups
+                .get(endpoint_id)
+                .is_some_and(|groups| groups.contains(&key));
+            let collapsed_groups = self
+                .remote_collapsed_groups
+                .entry(endpoint_id.clone())
+                .or_default();
+            if expanded {
+                collapsed_groups.remove(&key);
+            } else {
+                collapsed_groups.insert(key);
+            }
         }
     }
 
@@ -1201,43 +1263,65 @@ impl ClientShellState {
         snapshot: &ClientShellSnapshot,
     ) -> Vec<WorkspaceEntry> {
         let empty_collapsed_groups = HashSet::new();
-        let entries = if self.mobile_layout_active() {
-            render::workspace_entries(snapshot, &empty_collapsed_groups)
-        } else {
-            render::workspace_entries(
-                snapshot,
-                self.collapsed_groups_for_endpoint(&self.active_endpoint_id)
-                    .unwrap_or(&empty_collapsed_groups),
-            )
-        };
-        entries.into_iter().filter(|entry| !entry.folder).collect()
+        render::workspace_entries(snapshot, &empty_collapsed_groups)
+            .into_iter()
+            .filter(|entry| !entry.folder)
+            .collect()
     }
 
-    pub(super) fn reveal_workspace(&mut self, workspace_id: &str) {
-        if self
-            .hits
-            .workspaces
-            .iter()
-            .any(|hit| hit.workspace_id == workspace_id)
+    pub(super) fn reveal_workspace(&mut self, endpoint_id: &ClientEndpointId, workspace_id: &str) {
+        if endpoint_id == &self.active_endpoint_id
+            && self
+                .hits
+                .workspaces
+                .iter()
+                .any(|hit| hit.workspace_id == workspace_id)
         {
             return;
         }
-        let target = self.snapshot.as_deref().and_then(|snapshot| {
-            let empty_collapsed_groups = HashSet::new();
-            let collapsed_groups = self
-                .collapsed_groups_for_endpoint(&self.active_endpoint_id)
-                .unwrap_or(&empty_collapsed_groups);
-            render::workspace_entries(snapshot, collapsed_groups)
-                .iter()
-                .position(|entry| {
-                    entry
-                        .workspace_index()
-                        .and_then(|index| snapshot.workspaces.get(index))
-                        .is_some_and(|workspace| workspace.workspace_id == workspace_id)
-                })
-        });
-        if let Some(target) = target {
-            self.workspace_scroll = target.min(self.hits.workspace_max_scroll);
+        let folder_key = self
+            .endpoints
+            .iter()
+            .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
+            .and_then(|endpoint| endpoint.snapshot.as_deref())
+            .and_then(|snapshot| {
+                snapshot
+                    .workspaces
+                    .iter()
+                    .find(|workspace| workspace.workspace_id == workspace_id)
+                    .map(super::sidebar::workspace_folder_key)
+            });
+        if let Some(folder_key) = folder_key.filter(|key| self.group_is_collapsed(endpoint_id, key))
+        {
+            self.toggle_collapsed_group(endpoint_id, folder_key);
+        }
+        let empty_collapsed_groups = HashSet::new();
+        let collapsed_groups =
+            if endpoint_id == &self.active_endpoint_id && self.mobile_layout_active() {
+                &empty_collapsed_groups
+            } else {
+                self.collapsed_groups_for_endpoint(endpoint_id)
+                    .unwrap_or(&empty_collapsed_groups)
+            };
+        let target = self
+            .endpoints
+            .iter()
+            .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
+            .and_then(|endpoint| endpoint.snapshot.as_deref())
+            .and_then(|snapshot| {
+                render::workspace_entries(snapshot, collapsed_groups)
+                    .iter()
+                    .position(|entry| {
+                        entry
+                            .workspace_index()
+                            .and_then(|index| snapshot.workspaces.get(index))
+                            .is_some_and(|workspace| workspace.workspace_id == workspace_id)
+                    })
+            });
+        if endpoint_id == &self.active_endpoint_id {
+            if let Some(target) = target {
+                self.workspace_scroll = target.min(self.hits.workspace_max_scroll);
+            }
         }
     }
 

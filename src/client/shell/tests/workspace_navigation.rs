@@ -375,11 +375,11 @@ fn single_machine_compact_navigation_includes_visible_collapsed_group_children()
 
 #[test]
 fn workspace_navigation_respects_each_machines_visible_worktree_groups() {
-    for (cols, compact, unavailable, show_child) in [
-        (100, false, false, false),
-        (100, true, false, true),
-        (44, false, false, true),
-        (44, true, true, false),
+    for (cols, compact, unavailable) in [
+        (100, false, false),
+        (100, true, false),
+        (44, false, false),
+        (44, true, true),
     ] {
         let (mut state, remote) = navigation_state(grouped_workspaces());
         state.toggle_collapsed_group(&remote, "repo".into());
@@ -394,9 +394,7 @@ fn workspace_navigation_respects_each_machines_visible_worktree_groups() {
         } else {
             ["ws_3", "ws_2"]
         };
-        let remote_ids: &[&str] = if !show_child {
-            &["ws_1", "ws_2"]
-        } else if compact {
+        let remote_ids: &[&str] = if compact && !unavailable {
             &["ws_1", "ws_2", "ws_3"]
         } else {
             &["ws_1", "ws_3", "ws_2"]
@@ -412,7 +410,10 @@ fn workspace_navigation_respects_each_machines_visible_worktree_groups() {
                 workspace_rect(&state, endpoint, id);
             }
         }
-        assert!(state.group_is_collapsed(&remote, "repo"));
+        assert_eq!(
+            state.group_is_collapsed(&remote, "repo"),
+            state.mobile_layout_active() && state.pane_surface.is_some()
+        );
         assert!(!state.group_is_collapsed(&ClientEndpointId::Local, "repo"));
     }
 }
@@ -755,11 +756,14 @@ fn pending_navigation_highlight_does_not_survive_identity_changes() {
                 snapshot.boot_id = "replacement-boot".into();
                 state.set_snapshot(Box::new(snapshot));
             }
-            "generation" => state.set_endpoint_snapshot_for_generation(
-                &ClientEndpointId::Local,
-                1,
-                Box::new(snapshot),
-            ),
+            "generation" => {
+                state.expanded_groups.insert("folder:/repo".into());
+                state.set_endpoint_snapshot_for_generation(
+                    &ClientEndpointId::Local,
+                    1,
+                    Box::new(snapshot),
+                );
+            }
             "deleted" => {
                 snapshot.workspaces.pop();
                 state.set_snapshot(Box::new(snapshot));
@@ -773,6 +777,7 @@ fn pending_navigation_highlight_does_not_survive_identity_changes() {
                 state.set_endpoint_snapshot(&remote, Box::new(snapshot));
                 assert!(state.activate_endpoint_projection(&remote));
                 assert!(state.pending_workspace_highlight.is_none());
+                state.expanded_groups.insert("folder:/repo".into());
                 assert!(state.activate_endpoint_projection(&ClientEndpointId::Local));
                 state.set_endpoint_catalog(&[]);
             }

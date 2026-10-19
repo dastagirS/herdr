@@ -121,13 +121,7 @@ impl ClientShellState {
                     })
                     .collect()
             } else {
-                let collapsed_groups = if mobile && surface_available {
-                    &empty_collapsed_groups
-                } else {
-                    self.collapsed_groups_for_endpoint(&endpoint.endpoint_id)
-                        .unwrap_or(&empty_collapsed_groups)
-                };
-                render::workspace_entries(snapshot, collapsed_groups)
+                render::workspace_entries(snapshot, &empty_collapsed_groups)
             };
             for entry in entries {
                 let Some(index) = entry.workspace_index() else {
@@ -158,8 +152,8 @@ impl ClientShellState {
         };
         let target = targets.swap_remove(next);
         self.collapsed_endpoints.remove(&target.endpoint_id);
-        if self.endpoints.len() == 1 && !mobile {
-            self.reveal_workspace(&target.workspace_id);
+        if !mobile || self.pane_surface.is_none() {
+            self.reveal_workspace(&target.endpoint_id, &target.workspace_id);
         }
         self.navigate_workspace_id = Some(target);
         self.reveal_mobile_workspace = mobile;
