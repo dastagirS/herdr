@@ -459,30 +459,28 @@ impl Default for AgentsSidebarConfig {
 #[serde(rename_all = "kebab-case")]
 pub enum SpacesSidebarAnimation {
     #[default]
+    #[serde(
+        alias = "orb",
+        alias = "orb-gyro",
+        alias = "pacman",
+        alias = "neon-bounce"
+    )]
     Static,
     Spinner,
     Pulse,
     Arc,
-    Orb,
-    OrbGyro,
     NeuralPulse,
     OrbitDots,
-    Pacman,
-    NeonBounce,
 }
 
 impl SpacesSidebarAnimation {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 6] = [
         Self::Static,
         Self::Spinner,
         Self::Pulse,
         Self::Arc,
-        Self::Orb,
-        Self::OrbGyro,
         Self::NeuralPulse,
         Self::OrbitDots,
-        Self::Pacman,
-        Self::NeonBounce,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -491,12 +489,8 @@ impl SpacesSidebarAnimation {
             Self::Spinner => "spinner",
             Self::Pulse => "pulse",
             Self::Arc => "arc",
-            Self::Orb => "orb",
-            Self::OrbGyro => "orb-gyro",
             Self::NeuralPulse => "neural-pulse",
             Self::OrbitDots => "orbit-dots",
-            Self::Pacman => "pacman",
-            Self::NeonBounce => "neon-bounce",
         }
     }
 
@@ -506,12 +500,8 @@ impl SpacesSidebarAnimation {
             Self::Spinner => "braille spinner",
             Self::Pulse => "dot pulse",
             Self::Arc => "arc spinner",
-            Self::Orb => "thinking orb",
-            Self::OrbGyro => "thinking orb gyro",
             Self::NeuralPulse => "neural pulse",
             Self::OrbitDots => "orbit dots",
-            Self::Pacman => "pacman",
-            Self::NeonBounce => "neon bounce",
         }
     }
 }
@@ -644,6 +634,19 @@ animation = "neural-pulse"
             let config: crate::config::Config =
                 toml::from_str(&input).expect("every listed Spaces animation should parse");
             assert_eq!(config.ui.sidebar.spaces.animation, animation);
+        }
+    }
+
+    #[test]
+    fn removed_space_animation_names_fall_back_to_static() {
+        for name in ["orb", "orb-gyro", "pacman", "neon-bounce"] {
+            let input = format!("[ui.sidebar.spaces]\nanimation = \"{name}\"\n");
+            let config: crate::config::Config =
+                toml::from_str(&input).expect("removed animation names should remain readable");
+            assert_eq!(
+                config.ui.sidebar.spaces.animation,
+                SpacesSidebarAnimation::Static
+            );
         }
     }
 

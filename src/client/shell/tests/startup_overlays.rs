@@ -1178,18 +1178,12 @@ fn spaces_animation_settings_section_lists_all_animation_choices() {
     assert!(text.contains("braille spinner"));
     assert!(text.contains("dot pulse"));
     assert!(text.contains("arc spinner"));
-    assert!(text.contains("thinking orb"));
-    assert!(text.contains("thinking orb gyro"));
     assert!(text.contains("neural pulse"));
     assert!(text.contains("orbit dots"));
-    assert!(text.contains("pacman"));
-    assert!(text.contains("neon bounce"));
     assert!(text.contains("⠋"));
     assert!(text.contains("·"));
     assert!(text.contains("◜"));
-    assert!(text.contains("·○·"));
-    assert!(text.contains("◌·"));
-    assert_eq!(state.hits.settings_choices.len(), 10);
+    assert_eq!(state.hits.settings_choices.len(), 6);
     assert!(state.tick_spaces_animation());
     let next_frame = state.compose(106, 30).expect("next spaces settings frame");
     let next_text = next_frame
