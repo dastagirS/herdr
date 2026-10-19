@@ -519,64 +519,42 @@ impl ClientShellState {
             return None;
         }
         let snapshot = self.snapshot.as_deref()?;
-        let mut slots = self
+        let movable_hits = self
             .hits
             .workspaces
             .iter()
-            .filter(|hit| hit.endpoint_id == self.active_endpoint_id && !hit.indented)
+            .filter(|hit| hit.endpoint_id == self.active_endpoint_id && hit.indented)
             .filter(|hit| {
-                hit.group_toggle.as_ref().is_none_or(|(_, key)| {
-                    snapshot
-                        .workspaces
-                        .iter()
-                        .find(|workspace| {
-                            workspace.worktree.as_ref().is_some_and(|worktree| {
-                                worktree.key == *key && !worktree.is_linked_worktree
-                            })
-                        })
-                        .is_some_and(|workspace| workspace.workspace_id == hit.workspace_id)
-                })
+                snapshot
+                    .workspaces
+                    .iter()
+                    .find(|workspace| workspace.workspace_id == hit.workspace_id)
+                    .is_some_and(|workspace| {
+                        !workspace
+                            .worktree
+                            .as_ref()
+                            .is_some_and(|worktree| worktree.is_linked_worktree)
+                    })
             })
-            .map(|hit| (Some(hit.workspace_id.clone()), hit.rect.y.saturating_sub(1)))
             .collect::<Vec<_>>();
-        let empty_collapsed_groups = HashSet::new();
-        let collapsed_groups = self
-            .collapsed_groups_for_endpoint(&self.active_endpoint_id)
-            .unwrap_or(&empty_collapsed_groups);
-        let entries = render::workspace_entries(snapshot, collapsed_groups);
-        let last_hit = self
+        if movable_hits.is_empty() {
+            return None;
+        }
+        let mut slots = Vec::with_capacity(movable_hits.len() + 1);
+        for hit in &movable_hits {
+            let midpoint = hit.rect.y.saturating_add(hit.rect.height / 2);
+            if point.1 < midpoint {
+                slots.push((Some(hit.workspace_id.clone()), hit.rect.y));
+                break;
+            }
+        }
+        let last_visible = self
             .hits
             .workspaces
             .iter()
             .rev()
             .find(|hit| hit.endpoint_id == self.active_endpoint_id)?;
-        let last_position = entries.iter().position(|entry| {
-            snapshot
-                .workspaces
-                .get(entry.index)
-                .is_some_and(|workspace| workspace.workspace_id == last_hit.workspace_id)
-        })?;
-        let next = entries.get(last_position + 1);
-        if !next.is_some_and(|entry| {
-            entry.indented
-                || last_hit.group_toggle.as_ref().is_some_and(|(_, key)| {
-                    snapshot.workspaces[entry.index]
-                        .worktree
-                        .as_ref()
-                        .is_some_and(|worktree| worktree.key == *key)
-                })
-        }) {
-            let before = next.and_then(|entry| {
-                snapshot
-                    .workspaces
-                    .get(entry.index)
-                    .map(|workspace| workspace.workspace_id.clone())
-            });
-            let row = last_hit.rect.bottom();
-            if row < self.hits.new_workspace.y {
-                slots.push((before, row));
-            }
-        }
+        slots.push((None, last_visible.rect.bottom()));
         slots
             .into_iter()
             .enumerate()
@@ -2089,11 +2067,13 @@ impl ClientShellState {
                     outcome.repaint = true;
                     return;
                 }
-                let group_toggle = self.hits.workspaces.iter().find_map(|hit| {
-                    let (rect, key) = hit.group_toggle.as_ref()?;
-                    super::contains(*rect, point).then(|| (hit.endpoint_id.clone(), key.clone()))
-                });
-                if let Some((endpoint_id, key)) = group_toggle {
+                let folder_toggle = self
+                    .hits
+                    .folder_toggles
+                    .iter()
+                    .find(|(rect, _, _)| super::contains(*rect, point))
+                    .map(|(_, endpoint_id, key)| (endpoint_id.clone(), key.clone()));
+                if let Some((endpoint_id, key)) = folder_toggle {
                     self.toggle_collapsed_group(&endpoint_id, key);
                     outcome.repaint = true;
                     self.persist_chrome_preferences(outcome);

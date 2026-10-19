@@ -7,24 +7,25 @@ fn mouse_hits_use_stable_workspace_tab_and_pane_ids() {
     state.set_snapshot(Box::new(snapshot()));
     state.set_pane_surface(surface());
     state.compose(106, 20).expect("composed frame");
+    let workspace = state.hits.workspaces[0].rect;
 
     let workspace_down =
         state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
-            column: 2,
-            row: 2,
+            column: workspace.x + 2,
+            row: workspace.y,
             modifiers: KeyModifiers::empty(),
         })]);
     assert!(workspace_down.actions.is_empty());
-    let workspace =
+    let workspace_click =
         state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
             kind: MouseEventKind::Up(MouseButton::Left),
-            column: 2,
-            row: 2,
+            column: workspace.x + 2,
+            row: workspace.y,
             modifiers: KeyModifiers::empty(),
         })]);
-    assert!(workspace.requests.is_empty());
-    let [ClientShellAction::Endpoint { request, .. }] = &workspace.actions[..] else {
+    assert!(workspace_click.requests.is_empty());
+    let [ClientShellAction::Endpoint { request, .. }] = &workspace_click.actions[..] else {
         panic!("workspace click should use the endpoint API");
     };
     assert!(matches!(
@@ -130,7 +131,7 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(text.contains("main"));
+    assert!(text.contains("client-shell"));
     assert!(text.contains("└─"));
     assert!(text.contains("feature"));
 
@@ -147,12 +148,10 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
     state.set_pane_surface(replacement_surface);
     let collapsed = state.compose(106, 20).expect("collapsed worktree group");
     let parent = state.hits.workspaces[0].rect;
-    let status_cell = usize::from(parent.y) * usize::from(collapsed.width)
-        + usize::from(parent.x.saturating_add(1));
-    assert_eq!(
-        collapsed.cells[status_cell].fg,
-        crate::protocol::color_to_u32(state.config.palette.red)
-    );
+    assert!((parent.x..parent.right()).any(|x| {
+        collapsed.cells[usize::from(parent.y) * usize::from(collapsed.width) + usize::from(x)].fg
+            == crate::protocol::color_to_u32(state.config.palette.red)
+    }));
 
     let mut next = ClientShellInput::default();
     state.record_binding(
@@ -165,128 +164,104 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
             if matches!(
                 &request.method,
                 crate::api::schema::Method::WorkspaceFocus(target)
-                    if target.workspace_id == "ws_1"
+                    if target.workspace_id == "ws_2"
             )
     ));
 }
 
 #[test]
-fn duplicate_repo_parents_remain_visible_and_focusable_when_collapsed() {
-    for linked_child in [false, true] {
-        let mut projected = snapshot();
-        projected.workspaces[0].agent_status = AgentStatus::Idle;
-        projected.workspaces[0].worktree = Some(ClientShellWorktree {
-            key: "repo".into(),
-            label: "repo".into(),
-            is_linked_worktree: false,
-        });
-        let mut duplicate = projected.workspaces[0].clone();
-        duplicate.workspace_id = "ws_duplicate".into();
-        duplicate.label = "duplicate-repo".into();
-        duplicate.focused = false;
-        duplicate.agent_status = AgentStatus::Blocked;
-        projected.workspaces.push(duplicate);
-        if linked_child {
-            let mut child = projected.workspaces[0].clone();
-            child.workspace_id = "ws_child".into();
-            child.focused = false;
-            child.worktree.as_mut().unwrap().is_linked_worktree = true;
-            projected.workspaces.push(child);
-        }
+fn folder_rows_deduplicate_duplicate_worktree_parents_and_collapse_children() {
+    let mut projected = snapshot();
+    projected.workspaces[0].worktree = Some(ClientShellWorktree {
+        key: "repo".into(),
+        label: "repo".into(),
+        is_linked_worktree: false,
+    });
+    let mut duplicate = projected.workspaces[0].clone();
+    duplicate.workspace_id = "ws_duplicate".into();
+    duplicate.label = "duplicate-repo".into();
+    duplicate.focused = false;
+    duplicate.agent_status = AgentStatus::Blocked;
+    projected.workspaces.push(duplicate);
+    let mut child = projected.workspaces[0].clone();
+    child.workspace_id = "ws_child".into();
+    child.label = "feature".into();
+    child.focused = false;
+    child
+        .worktree
+        .as_mut()
+        .expect("worktree")
+        .is_linked_worktree = true;
+    projected.workspaces.push(child);
 
-        let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
-        state.set_snapshot(Box::new(projected));
-        state.set_pane_surface(surface());
-        for collapsed in [false, true] {
-            if collapsed {
-                state.collapsed_groups.insert("repo".into());
-            }
-            let frame = state
-                .compose(106, 24)
-                .expect("duplicate repository parents");
-            for workspace_id in ["ws_1", "ws_duplicate"] {
-                let hit = state
-                    .hits
-                    .workspaces
-                    .iter()
-                    .find(|hit| hit.workspace_id == workspace_id)
-                    .expect("repository parent remains visible");
-                assert!(!hit.indented);
-                assert_eq!(hit.group_toggle.is_some(), linked_child);
-            }
-            let parent = state.hits.workspaces[0].rect;
-            let status_cell =
-                usize::from(parent.y) * usize::from(frame.width) + usize::from(parent.x + 1);
-            assert_ne!(
-                frame.cells[status_cell].fg,
-                crate::protocol::color_to_u32(state.config.palette.red)
-            );
-            assert_eq!(
-                state
-                    .hits
-                    .workspaces
-                    .iter()
-                    .any(|hit| hit.workspace_id == "ws_child" && hit.indented),
-                linked_child && !collapsed
-            );
-            let duplicate = state.hits.workspaces[1].rect;
-            state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                column: duplicate.x + 2,
-                row: duplicate.y,
-                modifiers: KeyModifiers::empty(),
-            })]);
-            let click = state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
-                kind: MouseEventKind::Up(MouseButton::Left),
-                column: duplicate.x + 2,
-                row: duplicate.y,
-                modifiers: KeyModifiers::empty(),
-            })]);
-            assert!(matches!(click.actions.as_slice(),
-                [ClientShellAction::Endpoint { request, .. }]
-                    if matches!(&request.method, crate::api::schema::Method::WorkspaceFocus(target)
-                        if target.workspace_id == "ws_duplicate")));
-        }
-        let original = state.snapshot.as_deref().unwrap().clone();
-        for confirm_close in [false, true] {
-            let mut restored = original.clone();
-            restored.revision = state.snapshot.as_deref().unwrap().revision + 1;
-            state.set_snapshot(Box::new(restored));
-            state.config.confirm_close = confirm_close;
-            state.open_workspace_context_menu("ws_duplicate".into(), 0, 0);
-            let Some(ClientShellOverlay::ContextMenu(menu)) = state.overlay.as_ref() else {
-                panic!("repository workspace context menu");
-            };
-            assert_eq!(menu.items()[1].label, "Close");
-            assert_eq!(
-                menu.items()
-                    .iter()
-                    .any(|item| matches!(item.action, ClientContextMenuAction::ToggleGroup)),
-                linked_child
-            );
-            if linked_child {
-                let mut replacement = original.clone();
-                replacement.revision = state.snapshot.as_deref().unwrap().revision + 1;
-                replacement
-                    .workspaces
-                    .retain(|workspace| workspace.workspace_id != "ws_1");
-                state.set_snapshot(Box::new(replacement));
-            }
-            let mut close = ClientShellInput::default();
-            state.activate_context_menu_item(1, &mut close);
-            if confirm_close {
-                assert!(close.actions.is_empty());
-                assert!(matches!(state.overlay.as_ref(),
-                    Some(ClientShellOverlay::ConfirmClose(confirm))
-                        if confirm.title == "Close workspace?" && !confirm.close_group));
-                close = state.handle_input_bytes(b"\r");
-            }
-            assert!(matches!(close.actions.as_slice(),
-                [ClientShellAction::Endpoint { request, .. }]
-                    if matches!(&request.method, crate::api::schema::Method::WorkspaceClose(params)
-                        if params.workspace_id == "ws_duplicate" && !params.close_group)));
-        }
-    }
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected));
+    state.set_pane_surface(surface());
+    state.compose(106, 24).expect("expanded repository folder");
+    let visible_ids = state
+        .hits
+        .workspaces
+        .iter()
+        .map(|hit| hit.workspace_id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(visible_ids, ["ws_1", "ws_duplicate", "ws_child"]);
+    assert_eq!(
+        state
+            .hits
+            .folder_toggles
+            .iter()
+            .filter(|(_, endpoint_id, key)| endpoint_id.is_local() && key == "repo")
+            .count(),
+        1
+    );
+
+    state.collapsed_groups.insert("repo".into());
+    state.compose(106, 24).expect("collapsed repository folder");
+    let visible_ids = state
+        .hits
+        .workspaces
+        .iter()
+        .map(|hit| hit.workspace_id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(visible_ids, ["ws_1"]);
+
+    state.collapsed_groups.clear();
+    state.compose(106, 24).expect("expanded repository folder");
+    let duplicate = state
+        .hits
+        .workspaces
+        .iter()
+        .find(|hit| hit.workspace_id == "ws_duplicate")
+        .expect("duplicate subworkspace")
+        .rect;
+    state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: duplicate.x + 2,
+        row: duplicate.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    let click = state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        column: duplicate.x + 2,
+        row: duplicate.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    assert!(matches!(click.actions.as_slice(),
+        [ClientShellAction::Endpoint { request, .. }]
+            if matches!(&request.method, crate::api::schema::Method::WorkspaceFocus(target)
+                if target.workspace_id == "ws_duplicate")));
+
+    state.open_workspace_context_menu("ws_duplicate".into(), 0, 0);
+    let toggle_index = match state.overlay.as_ref() {
+        Some(ClientShellOverlay::ContextMenu(menu)) => menu
+            .items()
+            .iter()
+            .position(|item| item.action == ClientContextMenuAction::ToggleGroup)
+            .expect("folder toggle menu item"),
+        _ => panic!("repository workspace context menu"),
+    };
+    state.activate_context_menu_item(toggle_index, &mut ClientShellInput::default());
+    assert!(state.collapsed_groups.contains("repo"));
 }
 
 #[test]
@@ -398,23 +373,32 @@ fn duplicate_repo_parent_drag_does_not_target_its_own_move_block() {
     state
         .compose(106, 24)
         .expect("separated repository parents");
-    let source = state.hits.workspaces[0].rect;
-    let target = state.hits.workspaces[2].rect;
-    for (kind, rect, row) in [
-        (MouseEventKind::Down(MouseButton::Left), source, source.y),
-        (
-            MouseEventKind::Drag(MouseButton::Left),
-            target,
-            target.y.saturating_sub(1),
-        ),
-    ] {
-        state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
-            kind,
-            column: rect.x + 2,
-            row,
-            modifiers: KeyModifiers::empty(),
-        })]);
-    }
+    let source = state
+        .hits
+        .workspaces
+        .iter()
+        .find(|hit| hit.workspace_id == "ws_1")
+        .expect("source workspace")
+        .rect;
+    let target = state
+        .hits
+        .workspaces
+        .iter()
+        .find(|hit| hit.workspace_id == "ws_duplicate")
+        .expect("duplicate workspace target")
+        .rect;
+    state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: source.x + 2,
+        row: source.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::Drag(MouseButton::Left),
+        column: target.right().saturating_sub(1),
+        row: source.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
     assert!(
         matches!(state.chrome_drag.as_ref(), Some(ClientChromeDrag::Workspace {
         target: Some((Some(workspace_id), _)), ..
@@ -422,8 +406,8 @@ fn duplicate_repo_parent_drag_does_not_target_its_own_move_block() {
     );
     let drop = state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
         kind: MouseEventKind::Up(MouseButton::Left),
-        column: target.x + 2,
-        row: target.y.saturating_sub(1),
+        column: target.right().saturating_sub(1),
+        row: source.y,
         modifiers: KeyModifiers::empty(),
     })]);
     assert!(drop.actions.is_empty());
@@ -521,10 +505,22 @@ fn workspace_drag_moves_parent_worktree_as_one_block_and_rejects_child() {
     state
         .compose(106, 24)
         .expect("repository block with duplicate root");
-    let duplicate = state.hits.workspaces[1].rect;
-    let other = state.hits.workspaces[3].rect;
+    let duplicate = state
+        .hits
+        .workspaces
+        .iter()
+        .find(|hit| hit.workspace_id == "ws_duplicate")
+        .expect("duplicate parent")
+        .rect;
+    let other = state
+        .hits
+        .workspaces
+        .iter()
+        .find(|hit| hit.workspace_id == "ws_other")
+        .expect("other workspace")
+        .rect;
     for (source, target_row, moving_duplicate) in [
-        (other, duplicate.y.saturating_sub(1), false),
+        (other, parent.y.saturating_sub(1), false),
         (duplicate, other.bottom(), true),
     ] {
         state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {

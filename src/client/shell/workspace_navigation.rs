@@ -117,6 +117,7 @@ impl ClientShellState {
                         index,
                         indented: false,
                         last_child: false,
+                        folder: false,
                     })
                     .collect()
             } else {
@@ -129,9 +130,12 @@ impl ClientShellState {
                 render::workspace_entries(snapshot, collapsed_groups)
             };
             for entry in entries {
+                let Some(index) = entry.workspace_index() else {
+                    continue;
+                };
                 targets.push(WorkspaceNavigationTarget {
                     endpoint_id: endpoint.endpoint_id.clone(),
-                    workspace_id: snapshot.workspaces[entry.index].workspace_id.clone(),
+                    workspace_id: snapshot.workspaces[index].workspace_id.clone(),
                     boot_id: snapshot.boot_id.clone(),
                     generation: endpoint.snapshot_generation,
                 });

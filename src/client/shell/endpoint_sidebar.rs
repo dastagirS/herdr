@@ -32,19 +32,26 @@ pub(super) fn render_collapsed(
             continue;
         }
         if let Some(snapshot) = endpoint.snapshot.as_deref() {
+            let entries = super::sidebar::workspace_entries(snapshot, &HashSet::new());
             if reveal {
                 if let Some(target) = state
                     .selected_workspace_id
                     .filter(|target| target.endpoint_id == endpoint.endpoint_id)
                 {
-                    selected_row = snapshot
-                        .workspaces
+                    selected_row = entries
                         .iter()
-                        .position(|workspace| workspace.workspace_id == target.workspace_id)
+                        .position(|entry| {
+                            entry
+                                .workspace_index()
+                                .and_then(|index| snapshot.workspaces.get(index))
+                                .is_some_and(|workspace| {
+                                    workspace.workspace_id == target.workspace_id
+                                })
+                        })
                         .map(|index| total_rows + index);
                 }
             }
-            total_rows += snapshot.workspaces.len();
+            total_rows += entries.len();
         }
     }
     let height = usize::from(workspace_area.height);
@@ -122,7 +129,8 @@ pub(super) fn render_collapsed(
         let Some(snapshot) = endpoint.snapshot.as_deref() else {
             continue;
         };
-        for workspace in &snapshot.workspaces {
+        let entries = super::sidebar::workspace_entries(snapshot, &HashSet::new());
+        for entry in entries {
             if skip > 0 {
                 skip -= 1;
                 continue;
@@ -130,7 +138,25 @@ pub(super) fn render_collapsed(
             if y >= workspace_area.bottom() {
                 break;
             }
+            let Some(workspace) = snapshot.workspaces.get(entry.index) else {
+                continue;
+            };
             let rect = Rect::new(workspace_area.x, y, workspace_area.width, 1);
+            if entry.folder {
+                put_text(
+                    buffer,
+                    rect.x,
+                    rect.y,
+                    rect.width,
+                    &format!("▾ {}", super::sidebar::workspace_folder_label(workspace)),
+                    Style::default()
+                        .fg(palette.overlay1)
+                        .bg(palette.sidebar_bg)
+                        .add_modifier(Modifier::BOLD),
+                );
+                y = y.saturating_add(1);
+                continue;
+            }
             let focused = active && workspace.focused;
             let selected = state.selected_workspace_id.is_some_and(|target| {
                 target.matches(&endpoint.endpoint_id, &workspace.workspace_id)
@@ -196,8 +222,7 @@ pub(super) fn render_collapsed(
                 rect,
                 endpoint_id: endpoint.endpoint_id.clone(),
                 workspace_id: workspace.workspace_id.clone(),
-                indented: false,
-                group_toggle: None,
+                indented: entry.indented,
             });
             y = y.saturating_add(1);
         }
@@ -279,6 +304,10 @@ pub(super) fn render_expanded(
 
     enum Row {
         Endpoint(usize),
+        Folder {
+            endpoint: usize,
+            entry: WorkspaceEntry,
+        },
         Workspace {
             endpoint: usize,
             entry: WorkspaceEntry,
@@ -296,9 +325,18 @@ pub(super) fn render_expanded(
             rows.extend(
                 super::sidebar::workspace_entries(snapshot, collapsed_groups)
                     .into_iter()
-                    .map(|entry| Row::Workspace {
-                        endpoint: endpoint_index,
-                        entry,
+                    .map(|entry| {
+                        if entry.folder {
+                            Row::Folder {
+                                endpoint: endpoint_index,
+                                entry,
+                            }
+                        } else {
+                            Row::Workspace {
+                                endpoint: endpoint_index,
+                                entry,
+                            }
+                        }
                     }),
             );
         }
@@ -316,10 +354,9 @@ pub(super) fn render_expanded(
         .iter()
         .map(|row| match row {
             Row::Endpoint(_) => 1,
+            Row::Folder { .. } => 1,
             Row::Workspace { endpoint, entry } => {
                 let endpoint = &state.endpoints[*endpoint];
-                let collapsed_groups = collapsed_groups_for_endpoint(state, &endpoint.endpoint_id)
-                    .unwrap_or(&empty_collapsed_groups);
                 endpoint
                     .snapshot
                     .as_deref()
@@ -328,11 +365,7 @@ pub(super) fn render_expanded(
                         Some(
                             super::sidebar::workspace_rows(
                                 workspace,
-                                super::sidebar::displayed_workspace_status(
-                                    snapshot,
-                                    workspace,
-                                    collapsed_groups,
-                                ),
+                                workspace.agent_status,
                                 entry.indented,
                                 &config.spaces,
                             )
@@ -348,21 +381,32 @@ pub(super) fn render_expanded(
     let gaps = rows
         .iter()
         .enumerate()
-        .map(|(index, row)| match (row, rows.get(index + 1)) {
-            (
-                Row::Workspace { endpoint, .. },
-                Some(Row::Workspace {
-                    endpoint: next_endpoint,
-                    entry,
-                }),
-            ) if endpoint == next_endpoint => u16::from(!entry.indented) * config.spaces.row_gap,
-            _ => 0,
+        .map(|(index, row)| {
+            let Some(next) = rows.get(index + 1) else {
+                return 0;
+            };
+            let current_endpoint = match row {
+                Row::Endpoint(_) => None,
+                Row::Folder { endpoint, .. } | Row::Workspace { endpoint, .. } => Some(*endpoint),
+            };
+            let next_endpoint = match next {
+                Row::Endpoint(_) => None,
+                Row::Folder { endpoint, .. } | Row::Workspace { endpoint, .. } => Some(*endpoint),
+            };
+            if current_endpoint != next_endpoint {
+                return 0;
+            }
+            let current_is_workspace = matches!(row, Row::Workspace { .. });
+            let next_is_workspace_or_folder =
+                matches!(next, Row::Workspace { .. } | Row::Folder { .. });
+            u16::from(current_is_workspace && next_is_workspace_or_folder) * config.spaces.row_gap
         })
         .collect::<Vec<_>>();
     let reveal_navigation = !body.is_empty() && std::mem::take(state.reveal_navigation_workspace);
     let reveal_focus = !body.is_empty() && std::mem::take(state.reveal_focused_workspace);
     if reveal_navigation || reveal_focus {
         let selected_row = rows.iter().position(|row| match row {
+            Row::Folder { .. } | Row::Endpoint(_) => false,
             Row::Workspace { endpoint, entry } => {
                 let endpoint = &state.endpoints[*endpoint];
                 endpoint
@@ -383,7 +427,6 @@ pub(super) fn render_expanded(
                         }
                     })
             }
-            Row::Endpoint(_) => false,
         });
         if let Some(selected_row) = selected_row {
             *state.workspace_scroll = super::scroll::list_scroll_start_to_reveal(
@@ -443,7 +486,7 @@ pub(super) fn render_expanded(
                     .saturating_add(1)
                     .saturating_add(gaps.get(row_index).copied().unwrap_or(0));
             }
-            Row::Workspace { endpoint, entry } => {
+            Row::Folder { endpoint, entry } => {
                 let endpoint = &state.endpoints[*endpoint];
                 let Some(snapshot) = endpoint.snapshot.as_deref() else {
                     continue;
@@ -453,11 +496,50 @@ pub(super) fn render_expanded(
                 };
                 let collapsed_groups = collapsed_groups_for_endpoint(state, &endpoint.endpoint_id)
                     .unwrap_or(&empty_collapsed_groups);
-                let status = super::sidebar::displayed_workspace_status(
-                    snapshot,
-                    workspace,
-                    collapsed_groups,
+                let key = super::sidebar::workspace_folder_key(workspace);
+                let focused = snapshot.workspaces.iter().any(|candidate| {
+                    super::sidebar::workspace_folder_key(candidate) == key && candidate.focused
+                });
+                let rect = Rect::new(body.x, y, content_width, 1);
+                let nested = Rect::new(
+                    rect.x.saturating_add(2),
+                    rect.y,
+                    rect.width.saturating_sub(2),
+                    rect.height,
                 );
+                if let Some((toggle, key)) = super::sidebar::render_workspace_folder(
+                    buffer,
+                    nested,
+                    snapshot,
+                    *entry,
+                    collapsed_groups.contains(&key),
+                    focused,
+                    palette,
+                ) {
+                    hits.folder_toggles
+                        .push((toggle, endpoint.endpoint_id.clone(), key));
+                }
+                if endpoint.status != ClientEndpointStatus::Online {
+                    buffer.set_style(
+                        rect,
+                        Style::default()
+                            .fg(palette.overlay0)
+                            .add_modifier(Modifier::DIM),
+                    );
+                }
+                y = y
+                    .saturating_add(1)
+                    .saturating_add(gaps.get(row_index).copied().unwrap_or(0));
+            }
+            Row::Workspace { endpoint, entry } => {
+                let endpoint = &state.endpoints[*endpoint];
+                let Some(snapshot) = endpoint.snapshot.as_deref() else {
+                    continue;
+                };
+                let Some(workspace) = snapshot.workspaces.get(entry.index) else {
+                    continue;
+                };
+                let status = workspace.agent_status;
                 let tokens = super::sidebar::workspace_rows(
                     workspace,
                     status,
@@ -502,20 +584,11 @@ pub(super) fn render_expanded(
                             .add_modifier(Modifier::DIM),
                     );
                 }
-                let group_toggle = super::sidebar::render_parent_group_toggle(
-                    buffer,
-                    rect,
-                    snapshot,
-                    entry.index,
-                    collapsed_groups,
-                    palette,
-                );
                 hits.workspaces.push(WorkspaceHit {
                     rect,
                     endpoint_id: endpoint.endpoint_id.clone(),
                     workspace_id: workspace.workspace_id.clone(),
                     indented: entry.indented,
-                    group_toggle,
                 });
                 y = y
                     .saturating_add(height)

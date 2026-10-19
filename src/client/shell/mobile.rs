@@ -45,6 +45,20 @@ impl MobileItem {
             target: Some(target),
         }
     }
+
+    fn folder(label: String, palette: &Palette) -> Self {
+        Self {
+            lines: vec![Line::from(Span::styled(
+                format!("  ▾ {label}"),
+                Style::default()
+                    .fg(palette.overlay1)
+                    .bg(palette.panel_bg)
+                    .add_modifier(Modifier::BOLD),
+            ))],
+            background: palette.panel_bg,
+            target: None,
+        }
+    }
 }
 
 pub(super) fn render_mobile_header(
@@ -758,6 +772,13 @@ fn mobile_items(
             let Some(workspace) = endpoint.snapshot.workspaces.get(entry.index) else {
                 continue;
             };
+            if entry.folder {
+                items.push(MobileItem::folder(
+                    super::sidebar::workspace_folder_label(workspace),
+                    palette,
+                ));
+                continue;
+            }
             let selected = selected_workspace_id.is_some_and(|target| {
                 target.matches(endpoint.endpoint_id, &workspace.workspace_id)
             });
@@ -787,12 +808,8 @@ fn mobile_items(
             } else {
                 ""
             };
-            let name = if entry.indented && !workspace.custom_label {
-                workspace
-                    .branch
-                    .as_deref()
-                    .and_then(|branch| branch.strip_prefix("worktree/").or(Some(branch)))
-                    .unwrap_or(&workspace.label)
+            let name = if entry.indented {
+                super::sidebar::workspace_subworkspace_label(workspace)
             } else {
                 &workspace.label
             };

@@ -167,7 +167,6 @@ fn desktop_composition_keeps_shell_outside_origin_relative_surface() {
         .join("\n");
     assert!(text.contains("spaces"));
     assert!(text.contains("client-shell"));
-    assert!(text.contains("main"));
     assert!(text.contains("LIVE"));
     assert!(!text.contains("1 1"));
     assert_eq!(

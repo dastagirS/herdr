@@ -127,6 +127,7 @@ impl ClientShellState {
                         .map_or_else(Vec::new, |snapshot| {
                             render::workspace_entries(snapshot, &HashSet::new())
                                 .into_iter()
+                                .filter(|entry| !entry.folder)
                                 .filter_map(|entry| {
                                     snapshot.workspaces.get(entry.index).map(|workspace| {
                                         (

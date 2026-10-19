@@ -86,6 +86,7 @@ pub(super) enum ClientMobileTarget {
 pub(super) struct ShellHitMap {
     pub(super) machines: Vec<MachineHit>,
     pub(super) workspaces: Vec<WorkspaceHit>,
+    pub(super) folder_toggles: Vec<(Rect, ClientEndpointId, String)>,
     pub(super) workspace_body: Rect,
     pub(super) workspace_scrollbar: Rect,
     pub(super) workspace_scroll_metrics: Option<crate::pane::ScrollMetrics>,
@@ -237,7 +238,6 @@ pub(super) struct WorkspaceHit {
     pub(super) endpoint_id: ClientEndpointId,
     pub(super) workspace_id: String,
     pub(super) indented: bool,
-    pub(super) group_toggle: Option<(Rect, String)>,
 }
 
 #[derive(Debug)]
@@ -995,6 +995,13 @@ pub(super) struct WorkspaceEntry {
     pub(super) index: usize,
     pub(super) indented: bool,
     pub(super) last_child: bool,
+    pub(super) folder: bool,
+}
+
+impl WorkspaceEntry {
+    pub(super) fn workspace_index(self) -> Option<usize> {
+        (!self.folder).then_some(self.index)
+    }
 }
 
 impl ClientShellState {
@@ -1194,7 +1201,7 @@ impl ClientShellState {
         snapshot: &ClientShellSnapshot,
     ) -> Vec<WorkspaceEntry> {
         let empty_collapsed_groups = HashSet::new();
-        if self.mobile_layout_active() {
+        let entries = if self.mobile_layout_active() {
             render::workspace_entries(snapshot, &empty_collapsed_groups)
         } else {
             render::workspace_entries(
@@ -1202,7 +1209,8 @@ impl ClientShellState {
                 self.collapsed_groups_for_endpoint(&self.active_endpoint_id)
                     .unwrap_or(&empty_collapsed_groups),
             )
-        }
+        };
+        entries.into_iter().filter(|entry| !entry.folder).collect()
     }
 
     pub(super) fn reveal_workspace(&mut self, workspace_id: &str) {
@@ -1215,9 +1223,18 @@ impl ClientShellState {
             return;
         }
         let target = self.snapshot.as_deref().and_then(|snapshot| {
-            self.navigation_workspace_entries(snapshot)
+            let empty_collapsed_groups = HashSet::new();
+            let collapsed_groups = self
+                .collapsed_groups_for_endpoint(&self.active_endpoint_id)
+                .unwrap_or(&empty_collapsed_groups);
+            render::workspace_entries(snapshot, collapsed_groups)
                 .iter()
-                .position(|entry| snapshot.workspaces[entry.index].workspace_id == workspace_id)
+                .position(|entry| {
+                    entry
+                        .workspace_index()
+                        .and_then(|index| snapshot.workspaces.get(index))
+                        .is_some_and(|workspace| workspace.workspace_id == workspace_id)
+                })
         });
         if let Some(target) = target {
             self.workspace_scroll = target.min(self.hits.workspace_max_scroll);

@@ -988,7 +988,7 @@ fn sidebar_renders_local_and_saved_ssh_endpoints_with_status() {
         .join("\n");
     assert!(text.contains("Local"));
     assert!(text.contains("Build"));
-    assert!(text.contains("remote-workspace"));
+    assert!(text.contains("remote-work"));
     let local = state
         .hits
         .machines
@@ -1096,14 +1096,16 @@ fn saved_machine_preserves_endpoint_scoped_worktree_collapses() {
         .iter()
         .find(|hit| hit.endpoint_id == ClientEndpointId::Local && hit.workspace_id == "ws_1")
         .expect("local parent workspace");
-    let (local_toggle, key) = local_parent
-        .group_toggle
-        .as_ref()
-        .expect("local worktree group marker");
+    let (local_toggle, _, key) = state
+        .hits
+        .folder_toggles
+        .iter()
+        .find(|(_, endpoint_id, key)| endpoint_id.is_local() && key == "repo")
+        .expect("local folder marker");
     assert_eq!(key, "repo");
     let buffer = frame.to_ratatui_buffer().expect("frame should reconstruct");
     assert_eq!(buffer[(local_toggle.x, local_toggle.y)].symbol(), "▸");
-    assert!((local_parent.rect.x..local_parent.rect.right())
+    assert!(!(local_parent.rect.x..local_parent.rect.right())
         .any(|x| buffer[(x, local_parent.rect.y)].fg == state.config.palette.red));
 
     assert!(state.activate_endpoint_projection(&remote_id));
@@ -1165,11 +1167,10 @@ fn saved_machine_preserves_endpoint_scoped_worktree_collapses() {
 
     let remote_toggle = state
         .hits
-        .workspaces
+        .folder_toggles
         .iter()
-        .find(|hit| hit.endpoint_id == remote_id && hit.workspace_id == "remote_ws_1")
-        .and_then(|hit| hit.group_toggle.as_ref())
-        .expect("remote worktree group marker")
+        .find(|(_, endpoint_id, key)| *endpoint_id == remote_id && key == "repo")
+        .expect("remote folder marker")
         .0;
     state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -1186,11 +1187,10 @@ fn saved_machine_preserves_endpoint_scoped_worktree_collapses() {
 
     let local_toggle = state
         .hits
-        .workspaces
+        .folder_toggles
         .iter()
-        .find(|hit| hit.endpoint_id == ClientEndpointId::Local && hit.workspace_id == "ws_1")
-        .and_then(|hit| hit.group_toggle.as_ref())
-        .expect("collapsed local group marker")
+        .find(|(_, endpoint_id, key)| endpoint_id.is_local() && key == "repo")
+        .expect("collapsed local folder marker")
         .0;
     state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -1343,7 +1343,7 @@ fn expanded_machine_sidebar_applies_space_row_gap_within_each_machine() {
         .iter()
         .find(|hit| hit.endpoint_id == remote_id)
         .expect("remote machine");
-    assert_eq!(local_workspaces[0].rect.y, local_machine.rect.bottom());
+    assert_eq!(local_workspaces[0].rect.y, local_machine.rect.bottom() + 1);
     assert_eq!(remote_machine.rect.y, local_workspaces[1].rect.bottom());
 
     let remote_workspaces = state
@@ -1353,14 +1353,17 @@ fn expanded_machine_sidebar_applies_space_row_gap_within_each_machine() {
         .filter(|hit| hit.endpoint_id == remote_id)
         .collect::<Vec<_>>();
     assert_eq!(remote_workspaces.len(), 3);
-    assert_eq!(remote_workspaces[0].rect.y, remote_machine.rect.bottom());
+    assert_eq!(
+        remote_workspaces[0].rect.y,
+        remote_machine.rect.bottom() + 1
+    );
     assert_eq!(
         remote_workspaces[1].rect.y,
-        remote_workspaces[0].rect.bottom()
+        remote_workspaces[0].rect.bottom() + 1
     );
     assert_eq!(
         remote_workspaces[2].rect.y,
-        remote_workspaces[1].rect.bottom() + 1
+        remote_workspaces[1].rect.bottom() + 2
     );
 
     state.workspace_scroll = usize::MAX;
@@ -1380,7 +1383,7 @@ fn expanded_machine_sidebar_applies_space_row_gap_within_each_machine() {
         .collect::<Vec<_>>();
     assert_eq!(visible_remote.len(), 3);
     let gap_y = visible_remote[1].rect.bottom();
-    assert_eq!(visible_remote[2].rect.y, gap_y + 1);
+    assert_eq!(visible_remote[2].rect.y, gap_y + 2);
     assert!(visible_remote[2].rect.bottom() <= state.hits.workspace_body.bottom());
     assert!(state
         .hits

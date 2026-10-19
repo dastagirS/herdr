@@ -266,8 +266,7 @@ impl ClientShellState {
                         .workspaces
                         .iter()
                         .find(|workspace| workspace.workspace_id == workspace_id)
-                        .and_then(|workspace| workspace.worktree.as_ref())
-                        .map(|worktree| worktree.key.clone())
+                        .map(super::sidebar::workspace_folder_key)
                 });
                 if let Some(key) = key {
                     let endpoint_id = self.active_endpoint_id.clone();
