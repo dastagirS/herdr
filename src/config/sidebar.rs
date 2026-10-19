@@ -461,6 +461,8 @@ pub enum SpacesSidebarAnimation {
     #[default]
     Static,
     Spinner,
+    Pulse,
+    Arc,
     Orb,
     OrbGyro,
     NeuralPulse,
@@ -470,9 +472,11 @@ pub enum SpacesSidebarAnimation {
 }
 
 impl SpacesSidebarAnimation {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
         Self::Static,
         Self::Spinner,
+        Self::Pulse,
+        Self::Arc,
         Self::Orb,
         Self::OrbGyro,
         Self::NeuralPulse,
@@ -485,6 +489,8 @@ impl SpacesSidebarAnimation {
         match self {
             Self::Static => "static",
             Self::Spinner => "spinner",
+            Self::Pulse => "pulse",
+            Self::Arc => "arc",
             Self::Orb => "orb",
             Self::OrbGyro => "orb-gyro",
             Self::NeuralPulse => "neural-pulse",
@@ -498,6 +504,8 @@ impl SpacesSidebarAnimation {
         match self {
             Self::Static => "static dots",
             Self::Spinner => "braille spinner",
+            Self::Pulse => "dot pulse",
+            Self::Arc => "arc spinner",
             Self::Orb => "thinking orb",
             Self::OrbGyro => "thinking orb gyro",
             Self::NeuralPulse => "neural pulse",
@@ -624,6 +632,19 @@ animation = "neural-pulse"
             config.ui.sidebar.spaces.animation,
             SpacesSidebarAnimation::NeuralPulse
         );
+    }
+
+    #[test]
+    fn parses_every_space_animation_name() {
+        for animation in SpacesSidebarAnimation::ALL {
+            let input = format!(
+                "[ui.sidebar.spaces]\nanimation = \"{}\"\n",
+                animation.as_str()
+            );
+            let config: crate::config::Config =
+                toml::from_str(&input).expect("every listed Spaces animation should parse");
+            assert_eq!(config.ui.sidebar.spaces.animation, animation);
+        }
     }
 
     #[test]

@@ -1088,10 +1088,12 @@
           "key": "ui.sidebar.spaces.animation",
           "type": "enum",
           "default": "\"static\"",
-          "description": "Animation shown beside working Spaces. Choices are \"static\", \"spinner\", \"orb\", \"orb-gyro\", \"neural-pulse\", \"orbit-dots\", \"pacman\", and \"neon-bounce\".",
+          "description": "Animation shown beside working Spaces. Choices are \"static\", \"spinner\", \"pulse\", \"arc\", \"orb\", \"orb-gyro\", \"neural-pulse\", \"orbit-dots\", \"pacman\", and \"neon-bounce\".",
           "values": [
             "static",
             "spinner",
+            "pulse",
+            "arc",
             "orb",
             "orb-gyro",
             "neural-pulse",

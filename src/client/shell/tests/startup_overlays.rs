@@ -1176,6 +1176,8 @@ fn spaces_animation_settings_section_lists_all_animation_choices() {
     ));
     assert!(text.contains("Spaces working animation"));
     assert!(text.contains("braille spinner"));
+    assert!(text.contains("dot pulse"));
+    assert!(text.contains("arc spinner"));
     assert!(text.contains("thinking orb"));
     assert!(text.contains("thinking orb gyro"));
     assert!(text.contains("neural pulse"));
@@ -1183,9 +1185,11 @@ fn spaces_animation_settings_section_lists_all_animation_choices() {
     assert!(text.contains("pacman"));
     assert!(text.contains("neon bounce"));
     assert!(text.contains("⠋"));
+    assert!(text.contains("·"));
+    assert!(text.contains("◜"));
     assert!(text.contains("·○·"));
     assert!(text.contains("◌·"));
-    assert_eq!(state.hits.settings_choices.len(), 8);
+    assert_eq!(state.hits.settings_choices.len(), 10);
     assert!(state.tick_spaces_animation());
     let next_frame = state.compose(106, 30).expect("next spaces settings frame");
     let next_text = next_frame
@@ -1194,6 +1198,8 @@ fn spaces_animation_settings_section_lists_all_animation_choices() {
         .map(|cell| cell.symbol.as_str())
         .collect::<String>();
     assert!(next_text.contains("⠙"));
+    assert!(next_text.contains("•"));
+    assert!(next_text.contains("◠"));
 }
 
 #[test]

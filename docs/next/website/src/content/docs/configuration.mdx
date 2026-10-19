@@ -313,7 +313,7 @@ The sidebar is the main Herdr dashboard. Search `ui.` in the [Config reference](
 
 Set `agent_panel = false` under `[ui]` to remove the Agent panel from the expanded and collapsed desktop sidebars while keeping agent tracking and keyboard navigation available.
 
-Set `ui.sidebar.spaces.animation` to `"spinner"`, `"orb"`, `"orb-gyro"`, `"neural-pulse"`, `"orbit-dots"`, `"pacman"`, or `"neon-bounce"` to animate the compact marker beside working Spaces. The `"orb"` choices are terminal-sized adaptations of Thinking Orbs' working and gyro looks; the default `"static"` preserves the existing status indicator.
+Set `ui.sidebar.spaces.animation` to `"spinner"`, `"pulse"`, `"arc"`, `"orb"`, `"orb-gyro"`, `"neural-pulse"`, `"orbit-dots"`, `"pacman"`, or `"neon-bounce"` to animate the compact marker beside working Spaces. The `"pulse"` and `"arc"` choices use single-cell glyphs; the `"orb"` choices are terminal-sized adaptations of Thinking Orbs' working and gyro looks. The default `"static"` preserves the existing status indicator.
 
 `ui.pane_borders` accepts `"auto"` (the default, borders only for split panes), `"always"` (also frame a single pane), or `"off"`. A single-pane frame requires `ui.pane_outer_borders = true`, because all its edges are outer edges. Existing boolean values remain valid: `true` means `"auto"` and `false` means `"off"`.
 
