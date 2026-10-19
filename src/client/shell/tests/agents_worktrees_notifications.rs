@@ -650,6 +650,46 @@ fn pane_cycle_last_and_agent_actions_resolve_to_stable_pane_ids() {
 }
 
 #[test]
+fn agent_panel_can_be_hidden_without_hiding_spaces() {
+    let mut projected = snapshot();
+    projected.agents = vec![ClientShellAgent {
+        pane_id: "pane_1".into(),
+        workspace_id: "ws_1".into(),
+        tab_id: "tab_1".into(),
+        name: Some("reviewer".into()),
+        display_agent: None,
+        agent: Some("pi".into()),
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        agent_status: AgentStatus::Working,
+        state_change_seq: 1,
+        state_labels: Vec::new(),
+        tokens: Vec::new(),
+        focused: true,
+    }];
+    let mut config = Config::default();
+    config.ui.agent_panel = false;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_snapshot(Box::new(projected));
+    state.set_pane_surface(surface());
+
+    for collapsed in [false, true] {
+        state.sidebar_collapsed = collapsed;
+        let frame = state.compose(106, 30).expect("sidebar frame");
+        assert!(state
+            .hits
+            .workspaces
+            .iter()
+            .any(|hit| hit.workspace_id == "ws_1"));
+        assert!(state.hits.agents.is_empty());
+        assert_eq!(state.hits.agent_sort_toggle, Rect::default());
+        assert_eq!(state.hits.sidebar_section_divider, Rect::default());
+        assert!(frame_rows(&frame).iter().all(|row| !row.contains("agents")));
+    }
+}
+
+#[test]
 fn agent_sidebar_honors_priority_symbols_tokens_and_stable_hits() {
     let mut projected = snapshot();
     let mut second_pane = projected.panes[0].clone();

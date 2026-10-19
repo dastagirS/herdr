@@ -1041,6 +1041,12 @@
           "description": "Title Herdr writes to the terminal it runs in. Tokens: {hostname}, {workspace}, {tab}, {pane}, {terminal_title}. Empty leaves the outer title alone."
         },
         {
+          "key": "ui.agent_panel",
+          "type": "boolean",
+          "default": "true",
+          "description": "Show the Agent sidebar panel in the desktop sidebar."
+        },
+        {
           "key": "ui.agent_panel_sort",
           "type": "enum",
           "default": "\"spaces\"",
