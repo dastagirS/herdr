@@ -3,6 +3,7 @@ pub(crate) enum ConfigEdit<'a> {
     Theme(&'a str),
     StatusIndicators(super::StatusIndicatorStyle),
     SpacesAnimation(super::SpacesSidebarAnimation),
+    TabLoadingIndicator(super::TabLoadingIndicator),
     Sound(bool),
     ToastDelivery(super::ToastDelivery),
 }
@@ -13,13 +14,17 @@ impl ConfigEdit<'_> {
             Self::Theme(_) => "theme",
             Self::StatusIndicators(_) => "status indicators",
             Self::SpacesAnimation(_) => "Spaces animation",
+            Self::TabLoadingIndicator(_) => "tab loading indicator",
             Self::Sound(_) => "sound setting",
             Self::ToastDelivery(_) => "toast setting",
         }
     }
 
     pub(crate) fn requires_server_reload(self) -> bool {
-        !matches!(self, Self::SpacesAnimation(_))
+        !matches!(
+            self,
+            Self::SpacesAnimation(_) | Self::TabLoadingIndicator(_)
+        )
     }
 
     pub(crate) fn apply(self, content: &str) -> String {
@@ -40,6 +45,12 @@ impl ConfigEdit<'_> {
                 "ui.sidebar.spaces",
                 "animation",
                 &format!("\"{}\"", animation.as_str()),
+            ),
+            Self::TabLoadingIndicator(indicator) => super::upsert_section_value(
+                content,
+                "ui",
+                "tab_loading_indicator",
+                &format!("\"{}\"", indicator.as_str()),
             ),
             Self::Sound(enabled) => {
                 super::upsert_section_bool(content, "ui.sound", "enabled", enabled)
@@ -114,6 +125,21 @@ mod tests {
         assert_eq!(
             config.ui.sidebar.spaces.animation,
             crate::config::SpacesSidebarAnimation::OrbitDots
+        );
+    }
+
+    #[test]
+    fn tab_loading_indicator_edit_updates_the_ui_setting_without_server_reload() {
+        let content = "[ui]\nagent_panel = false\n";
+        let edit = ConfigEdit::TabLoadingIndicator(crate::config::TabLoadingIndicator::Arc);
+        let updated = edit.apply(content);
+        let config: crate::config::Config = toml::from_str(&updated).unwrap();
+
+        assert!(!edit.requires_server_reload());
+        assert!(!config.ui.agent_panel);
+        assert_eq!(
+            config.ui.tab_loading_indicator,
+            crate::config::TabLoadingIndicator::Arc
         );
     }
 

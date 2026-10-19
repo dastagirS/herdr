@@ -1197,6 +1197,40 @@ fn spaces_animation_settings_section_lists_all_animation_choices() {
 }
 
 #[test]
+fn tab_loading_indicator_settings_section_lists_all_choices() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.open_settings_overlay();
+    for _ in 0..3 {
+        assert!(state.handle_input_bytes(b"\t").actions.is_empty());
+    }
+
+    let frame = state
+        .compose(106, 30)
+        .expect("tab indicator settings overlay");
+    let text = frame
+        .cells
+        .iter()
+        .map(|cell| cell.symbol.as_str())
+        .collect::<String>();
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
+            section: ClientSettingsSection::Tabs,
+            selected: 2,
+            ..
+        }))
+    ));
+    assert!(text.contains("Tab working indicator"));
+    assert!(text.contains("static dot"));
+    assert!(text.contains("braille spinner"));
+    assert!(text.contains("dot pulse"));
+    assert!(text.contains("arc spinner"));
+    assert_eq!(state.hits.settings_choices.len(), 5);
+}
+
+#[test]
 fn applying_spaces_animation_does_not_request_server_config_reload() {
     let _guard = crate::config::test_config_env_lock().lock().unwrap();
     struct ConfigPathGuard(Option<std::ffi::OsString>);

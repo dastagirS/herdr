@@ -1,6 +1,70 @@
 use super::*;
 
 #[test]
+fn working_tab_shows_a_loading_indicator() {
+    let mut projected = snapshot();
+    projected.tabs[0].agent_status = AgentStatus::Working;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected));
+    state.set_pane_surface(surface());
+
+    let frame = state.compose(106, 20).expect("working tab bar");
+    let tab = state.hits.tabs.first().expect("working tab hit").0;
+    let tab_text = (tab.x..tab.right())
+        .map(|x| {
+            frame.cells[(tab.y * frame.width + x) as usize]
+                .symbol
+                .as_str()
+        })
+        .collect::<String>();
+
+    assert!(
+        tab_text.contains("⠋"),
+        "working tab should show a loading indicator: {tab_text:?}"
+    );
+}
+
+#[test]
+fn tab_loading_indicator_can_be_disabled() {
+    let mut projected = snapshot();
+    projected.tabs[0].agent_status = AgentStatus::Working;
+    let mut config = Config::default();
+    config.ui.tab_loading_indicator = crate::config::TabLoadingIndicator::Off;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_snapshot(Box::new(projected));
+    state.set_pane_surface(surface());
+
+    let frame = state
+        .compose(106, 20)
+        .expect("working tab bar without indicator");
+    let tab = state.hits.tabs.first().expect("working tab hit").0;
+    let tab_text = (tab.x..tab.right())
+        .map(|x| {
+            frame.cells[(tab.y * frame.width + x) as usize]
+                .symbol
+                .as_str()
+        })
+        .collect::<String>();
+
+    assert_eq!(tab_text, "   1    ");
+}
+
+#[test]
+fn tab_loading_indicator_advances_with_the_client_animation_tick() {
+    let mut projected = snapshot();
+    projected.tabs[0].agent_status = AgentStatus::Working;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected));
+    state.set_pane_surface(surface());
+
+    let first = state.compose(106, 20).expect("first working tab frame");
+    assert!(frame_rows(&first).iter().any(|row| row.contains("⠋")));
+    assert!(state.tick_spaces_animation());
+    let second = state.compose(106, 20).expect("second working tab frame");
+    assert!(frame_rows(&second).iter().any(|row| row.contains("⠙")));
+}
+
+#[test]
 fn tab_overflow_controls_scroll_the_client_owned_tab_bar() {
     let mut snapshot = snapshot();
     snapshot.tabs.extend((2..=8).map(|number| ClientShellTab {

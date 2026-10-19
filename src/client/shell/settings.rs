@@ -24,6 +24,13 @@ fn spaces_animation_index(animation: crate::config::SpacesSidebarAnimation) -> u
         .unwrap_or(0)
 }
 
+fn tab_loading_indicator_index(indicator: crate::config::TabLoadingIndicator) -> usize {
+    crate::config::TabLoadingIndicator::ALL
+        .iter()
+        .position(|candidate| *candidate == indicator)
+        .unwrap_or(0)
+}
+
 fn toast_index(delivery: crate::config::ToastDelivery) -> usize {
     match delivery {
         crate::config::ToastDelivery::Off => 0,
@@ -57,6 +64,9 @@ impl ClientShellState {
             ClientSettingsSection::Theme => theme_index(&self.config.theme_name),
             ClientSettingsSection::Indicators => indicator_index(self.config.status_indicators),
             ClientSettingsSection::Spaces => spaces_animation_index(self.config.spaces.animation),
+            ClientSettingsSection::Tabs => {
+                tab_loading_indicator_index(self.config.tab_loading_indicator)
+            }
             ClientSettingsSection::Sound => usize::from(!self.config.sound_enabled),
             ClientSettingsSection::Toast => toast_index(self.config.toast_delivery),
             ClientSettingsSection::Integrations => 0,
@@ -107,6 +117,7 @@ impl ClientShellState {
                 ClientSettingsSection::Theme => crate::config::THEME_NAMES.len(),
                 ClientSettingsSection::Indicators | ClientSettingsSection::Sound => 2,
                 ClientSettingsSection::Spaces => crate::config::SpacesSidebarAnimation::ALL.len(),
+                ClientSettingsSection::Tabs => crate::config::TabLoadingIndicator::ALL.len(),
                 ClientSettingsSection::Toast => 4,
                 ClientSettingsSection::Integrations => settings.integrations.len(),
             },
@@ -179,7 +190,7 @@ impl ClientShellState {
             return false;
         }
         self.reload_client_config();
-        // Spaces animations are client-rendered; an older server would report the new key as unknown.
+        // These settings are client-rendered; an older server would report their keys as unknown.
         if edit.requires_server_reload() {
             self.push_endpoint_method_with_kind(
                 crate::api::schema::Method::ServerReloadConfig(
@@ -226,6 +237,15 @@ impl ClientShellState {
                 };
                 self.save_settings_edit(
                     crate::config::ConfigEdit::SpacesAnimation(*animation),
+                    outcome,
+                );
+            }
+            ClientSettingsSection::Tabs => {
+                let Some(indicator) = crate::config::TabLoadingIndicator::ALL.get(selected) else {
+                    return;
+                };
+                self.save_settings_edit(
+                    crate::config::ConfigEdit::TabLoadingIndicator(*indicator),
                     outcome,
                 );
             }

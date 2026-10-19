@@ -315,6 +315,10 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # New tabs can still be created with the configured keybinding.
 # hide_tab_bar_when_single_tab = false
 
+# Marker shown in tabs containing a working agent: "off", "static", "spinner",
+# "pulse", or "arc". Client-only; default is "spinner".
+# tab_loading_indicator = "spinner"
+
 # Desktop tab row placement: "top" or "bottom".
 # tab_bar_position = "top"
 
