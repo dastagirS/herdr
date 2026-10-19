@@ -175,6 +175,18 @@ fn pane_surface_topology_signature(surface: &PaneSurfaceFrame) -> u64 {
     hash
 }
 
+pub(super) const SPACES_ANIMATION_FRAME_COUNT: usize = 8;
+const NEURAL_PULSE_FRAMES: [&str; 4] = ["o-o-O", "o-O-o", "O-o-o", "o-O-o"];
+const ORBIT_DOTS_FRAMES: [&str; 8] = [
+    ". . .", ". o .", ". O .", ". o .", ". . .", ". . o", ". . O", ". . o",
+];
+const PACMAN_FRAMES: [&str; 8] = [
+    "C...", "cC..", ".cC.", "..cC", "...C", "..cC", ".cC.", "cC..",
+];
+const NEON_BOUNCE_FRAMES: [&str; 8] = [
+    "o    ", "oo   ", "ooo  ", " ooo ", "  ooo", "   oo", "    o", "   oo",
+];
+
 fn status_icon(
     status: crate::api::schema::AgentStatus,
     style: crate::config::StatusIndicatorStyle,
@@ -193,6 +205,30 @@ fn status_icon(
         (StatusIndicatorStyle::Symbols, AgentStatus::Done) => "✓",
         (StatusIndicatorStyle::Symbols, AgentStatus::Idle) => "○",
         (StatusIndicatorStyle::Symbols, AgentStatus::Unknown) => "·",
+    }
+}
+
+pub(super) fn spaces_status_icon(
+    status: crate::api::schema::AgentStatus,
+    style: crate::config::StatusIndicatorStyle,
+    animation: crate::config::SpacesSidebarAnimation,
+    frame: usize,
+) -> &'static str {
+    if status != crate::api::schema::AgentStatus::Working {
+        return status_icon(status, style);
+    }
+    match animation {
+        crate::config::SpacesSidebarAnimation::Static => status_icon(status, style),
+        crate::config::SpacesSidebarAnimation::NeuralPulse => {
+            NEURAL_PULSE_FRAMES[frame % NEURAL_PULSE_FRAMES.len()]
+        }
+        crate::config::SpacesSidebarAnimation::OrbitDots => {
+            ORBIT_DOTS_FRAMES[frame % ORBIT_DOTS_FRAMES.len()]
+        }
+        crate::config::SpacesSidebarAnimation::Pacman => PACMAN_FRAMES[frame % PACMAN_FRAMES.len()],
+        crate::config::SpacesSidebarAnimation::NeonBounce => {
+            NEON_BOUNCE_FRAMES[frame % NEON_BOUNCE_FRAMES.len()]
+        }
     }
 }
 

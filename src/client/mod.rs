@@ -2346,7 +2346,9 @@ async fn run_client_loop(
                             outcome.actions.extend(actions);
                         }
                         let (effects, notification_repaint) = shell.tick_notifications(now);
-                        outcome.repaint |= notification_repaint
+                        // Reuse the existing housekeeping timer so Spaces animations do not add another wakeup.
+                        outcome.repaint |= shell.tick_spaces_animation()
+                            | notification_repaint
                             | shell.tick_copy_feedback(now)
                             | shell.tick_workspace_highlight(now)
                             | shell.tick_endpoint_error(now);

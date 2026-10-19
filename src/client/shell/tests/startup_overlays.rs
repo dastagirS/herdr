@@ -1152,6 +1152,37 @@ fn current_release_notes_use_whats_new_without_attention_badge() {
 }
 
 #[test]
+fn spaces_animation_settings_section_lists_all_animation_choices() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.open_settings_overlay();
+    assert!(state.handle_input_bytes(b"\t").actions.is_empty());
+    assert!(state.handle_input_bytes(b"\t").actions.is_empty());
+
+    let frame = state.compose(106, 30).expect("spaces settings overlay");
+    let text = frame
+        .cells
+        .iter()
+        .map(|cell| cell.symbol.as_str())
+        .collect::<String>();
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
+            section: ClientSettingsSection::Spaces,
+            selected: 0,
+            ..
+        }))
+    ));
+    assert!(text.contains("Spaces working animation"));
+    assert!(text.contains("neural pulse  o-o-O"));
+    assert!(text.contains("orbit dots  . O ."));
+    assert!(text.contains("pacman  C..."));
+    assert!(text.contains("neon bounce  ooo"));
+    assert_eq!(state.hits.settings_choices.len(), 5);
+}
+
+#[test]
 fn client_settings_preview_restore_and_endpoint_integrations_are_owned_by_overlay() {
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     state.set_snapshot(Box::new(snapshot()));
@@ -1196,7 +1227,7 @@ fn client_settings_preview_restore_and_endpoint_integrations_are_owned_by_overla
 
     state.open_settings_overlay();
     state.compose(106, 30).expect("settings overlay");
-    for _ in 0..3 {
+    for _ in 0..ClientSettingsSection::ALL.len().saturating_sub(2) {
         let next = state.handle_input_bytes(b"\t");
         assert!(next.actions.is_empty());
     }

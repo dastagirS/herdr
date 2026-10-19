@@ -1085,6 +1085,19 @@
           "description": "Complete Agent-row overrides keyed by strict canonical agent id. Agents without an override use ui.sidebar.agents.rows."
         },
         {
+          "key": "ui.sidebar.spaces.animation",
+          "type": "enum",
+          "default": "\"static\"",
+          "description": "Animation shown beside working Spaces. Choices are \"static\", \"neural-pulse\", \"orbit-dots\", \"pacman\", and \"neon-bounce\".",
+          "values": [
+            "static",
+            "neural-pulse",
+            "orbit-dots",
+            "pacman",
+            "neon-bounce"
+          ]
+        },
+        {
           "key": "ui.sidebar.spaces.row_gap",
           "type": "integer",
           "default": "0",

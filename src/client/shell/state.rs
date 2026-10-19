@@ -386,6 +386,7 @@ pub(super) struct ClientGlobalMenuOverlay {
 pub(super) enum ClientSettingsSection {
     Theme,
     Indicators,
+    Spaces,
     Sound,
     Toast,
     Integrations,
@@ -395,6 +396,7 @@ impl ClientSettingsSection {
     pub(super) const ALL: &[Self] = &[
         Self::Theme,
         Self::Indicators,
+        Self::Spaces,
         Self::Sound,
         Self::Toast,
         Self::Integrations,
@@ -404,6 +406,7 @@ impl ClientSettingsSection {
         match self {
             Self::Theme => "theme",
             Self::Indicators => "indicators",
+            Self::Spaces => "spaces",
             Self::Sound => "sound",
             Self::Toast => "toasts",
             Self::Integrations => "integrations",
@@ -893,6 +896,7 @@ pub(crate) struct ClientShellState {
     pub(super) mobile_switcher_suspended: bool,
     pub(super) reveal_focused_tab: bool,
     pub(super) last_tab_bar_width: Option<u16>,
+    pub(super) spaces_animation_frame: usize,
     pub(super) last_composed_size: Option<(u16, u16)>,
     pub(super) last_composed_at: Option<std::time::Instant>,
     pub(super) selection_repaint_deadline: Option<std::time::Instant>,
@@ -1067,6 +1071,7 @@ impl ClientShellState {
             mobile_switcher_suspended: false,
             reveal_focused_tab: true,
             last_tab_bar_width: None,
+            spaces_animation_frame: 0,
             last_composed_size: None,
             last_composed_at: None,
             selection_repaint_deadline: None,
@@ -1877,6 +1882,32 @@ impl ClientShellState {
             return true;
         }
         false
+    }
+
+    pub(crate) fn tick_spaces_animation(&mut self) -> bool {
+        if self.config.spaces.animation == crate::config::SpacesSidebarAnimation::Static {
+            return false;
+        }
+        let working_workspace_exists = self.snapshot.as_deref().is_some_and(|snapshot| {
+            snapshot
+                .workspaces
+                .iter()
+                .any(|workspace| workspace.agent_status == crate::api::schema::AgentStatus::Working)
+        }) || self
+            .endpoints
+            .iter()
+            .filter_map(|endpoint| endpoint.snapshot.as_deref())
+            .any(|snapshot| {
+                snapshot.workspaces.iter().any(|workspace| {
+                    workspace.agent_status == crate::api::schema::AgentStatus::Working
+                })
+            });
+        if !working_workspace_exists {
+            return false;
+        }
+        self.spaces_animation_frame =
+            (self.spaces_animation_frame + 1) % super::SPACES_ANIMATION_FRAME_COUNT;
+        true
     }
 
     pub(crate) fn timer_delay(&self, now: std::time::Instant) -> std::time::Duration {

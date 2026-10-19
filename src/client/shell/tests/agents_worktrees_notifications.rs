@@ -650,6 +650,30 @@ fn pane_cycle_last_and_agent_actions_resolve_to_stable_pane_ids() {
 }
 
 #[test]
+fn spaces_working_animation_advances_without_changing_idle_icons() {
+    let mut projected = snapshot();
+    projected.workspaces[0].agent_status = AgentStatus::Working;
+    let mut config = Config::default();
+    config.ui.sidebar.spaces.animation = crate::config::SpacesSidebarAnimation::NeuralPulse;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_snapshot(Box::new(projected));
+    state.set_pane_surface(surface());
+
+    let frame = state.compose(106, 30).expect("initial animated frame");
+    assert!(frame_rows(&frame).iter().any(|row| row.contains("o-o-O")));
+    assert!(state.tick_spaces_animation());
+    let frame = state.compose(106, 30).expect("next animated frame");
+    assert!(frame_rows(&frame).iter().any(|row| row.contains("o-O-o")));
+
+    let mut idle = snapshot();
+    idle.workspaces[0].agent_status = AgentStatus::Idle;
+    state.set_snapshot(Box::new(idle));
+    assert!(!state.tick_spaces_animation());
+    let frame = state.compose(106, 30).expect("idle frame");
+    assert!(frame_rows(&frame).iter().any(|row| row.contains("○")));
+}
+
+#[test]
 fn agent_panel_can_be_hidden_without_hiding_spaces() {
     let mut projected = snapshot();
     projected.agents = vec![ClientShellAgent {

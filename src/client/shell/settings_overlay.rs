@@ -170,6 +170,20 @@ pub(super) fn render_settings_overlay(
                 &mut choice_hits,
             );
         }
+        ClientSettingsSection::Spaces => {
+            let choices =
+                crate::config::SpacesSidebarAnimation::ALL.map(|animation| animation.label());
+            render_choice_section(
+                buffer,
+                content,
+                "Spaces working animation",
+                "choose the compact animation shown while a Space is working",
+                &choices,
+                settings.selected,
+                palette,
+                &mut choice_hits,
+            );
+        }
         ClientSettingsSection::Sound => {
             render_choice_section(
                 buffer,

@@ -69,6 +69,7 @@ impl ClientShellState {
             sidebar_collapsed: false,
             sidebar_section_split: self.sidebar_section_split,
             tab_drag_insert_index: None,
+            spaces_animation_frame: self.spaces_animation_frame,
             selected_workspace_id: self
                 .navigate_workspace_id
                 .as_ref()
@@ -225,6 +226,7 @@ impl ClientShellState {
                 sidebar_collapsed: self.sidebar_collapsed,
                 sidebar_section_split: self.sidebar_section_split,
                 tab_drag_insert_index,
+                spaces_animation_frame: self.spaces_animation_frame,
                 selected_workspace_id: self
                     .navigate_workspace_id
                     .as_ref()

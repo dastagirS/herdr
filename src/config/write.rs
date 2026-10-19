@@ -2,6 +2,7 @@
 pub(crate) enum ConfigEdit<'a> {
     Theme(&'a str),
     StatusIndicators(super::StatusIndicatorStyle),
+    SpacesAnimation(super::SpacesSidebarAnimation),
     Sound(bool),
     ToastDelivery(super::ToastDelivery),
 }
@@ -11,6 +12,7 @@ impl ConfigEdit<'_> {
         match self {
             Self::Theme(_) => "theme",
             Self::StatusIndicators(_) => "status indicators",
+            Self::SpacesAnimation(_) => "Spaces animation",
             Self::Sound(_) => "sound setting",
             Self::ToastDelivery(_) => "toast setting",
         }
@@ -28,6 +30,12 @@ impl ConfigEdit<'_> {
                 "ui",
                 "status_indicators",
                 &format!("\"{}\"", style.as_str()),
+            ),
+            Self::SpacesAnimation(animation) => super::upsert_section_value(
+                content,
+                "ui.sidebar.spaces",
+                "animation",
+                &format!("\"{}\"", animation.as_str()),
             ),
             Self::Sound(enabled) => {
                 super::upsert_section_bool(content, "ui.sound", "enabled", enabled)
@@ -77,6 +85,33 @@ pub(crate) fn write_edit(edit: ConfigEdit<'_>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spaces_animation_edit_updates_the_nested_sidebar_setting() {
+        let content = "[ui.sidebar.spaces]\nrow_gap = 1\n";
+        let updated =
+            ConfigEdit::SpacesAnimation(crate::config::SpacesSidebarAnimation::NeuralPulse)
+                .apply(content);
+        let config: crate::config::Config = toml::from_str(&updated).unwrap();
+        assert_eq!(config.ui.sidebar.spaces.row_gap, 1);
+        assert_eq!(
+            config.ui.sidebar.spaces.animation,
+            crate::config::SpacesSidebarAnimation::NeuralPulse
+        );
+    }
+
+    #[test]
+    fn spaces_animation_edit_adds_missing_sidebar_table() {
+        let content = "[ui]\nagent_panel = false\n";
+        let updated = ConfigEdit::SpacesAnimation(crate::config::SpacesSidebarAnimation::OrbitDots)
+            .apply(content);
+        let config: crate::config::Config = toml::from_str(&updated).unwrap();
+        assert!(!config.ui.agent_panel);
+        assert_eq!(
+            config.ui.sidebar.spaces.animation,
+            crate::config::SpacesSidebarAnimation::OrbitDots
+        );
+    }
 
     #[test]
     fn update_file_at_does_not_move_a_leading_bom_into_the_file() {

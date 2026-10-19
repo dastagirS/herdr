@@ -455,12 +455,54 @@ impl Default for AgentsSidebarConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum SpacesSidebarAnimation {
+    #[default]
+    Static,
+    NeuralPulse,
+    OrbitDots,
+    Pacman,
+    NeonBounce,
+}
+
+impl SpacesSidebarAnimation {
+    pub const ALL: [Self; 5] = [
+        Self::Static,
+        Self::NeuralPulse,
+        Self::OrbitDots,
+        Self::Pacman,
+        Self::NeonBounce,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Static => "static",
+            Self::NeuralPulse => "neural-pulse",
+            Self::OrbitDots => "orbit-dots",
+            Self::Pacman => "pacman",
+            Self::NeonBounce => "neon-bounce",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Static => "static dots  ●",
+            Self::NeuralPulse => "neural pulse  o-o-O",
+            Self::OrbitDots => "orbit dots  . O .",
+            Self::Pacman => "pacman  C...",
+            Self::NeonBounce => "neon bounce  ooo",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct SpacesSidebarConfig {
     #[serde(deserialize_with = "deserialize_sidebar_rows")]
     pub rows: SpaceSidebarRows,
     pub row_gap: u16,
+    pub animation: SpacesSidebarAnimation,
 }
 
 impl Default for SpacesSidebarConfig {
@@ -471,6 +513,7 @@ impl Default for SpacesSidebarConfig {
                 vec![SpaceSidebarToken::Branch, SpaceSidebarToken::GitStatus],
             ],
             row_gap: DEFAULT_SIDEBAR_ROW_GAP,
+            animation: SpacesSidebarAnimation::Static,
         }
     }
 }
@@ -511,6 +554,7 @@ mod tests {
             ]
         );
         assert_eq!(config.spaces.row_gap, 0);
+        assert_eq!(config.spaces.animation, SpacesSidebarAnimation::Static);
     }
 
     #[test]
@@ -527,6 +571,7 @@ claude = [["terminal_title_stripped"], ["agent", "$model"]]
 [ui.sidebar.spaces]
 rows = [["workspace"], ["$jj_status"]]
 row_gap = 3
+animation = "neural-pulse"
 "#,
         )
         .expect("sidebar token config");
@@ -563,6 +608,10 @@ row_gap = 3
             vec![SpaceSidebarToken::Custom("jj_status".into())]
         );
         assert_eq!(config.ui.sidebar.spaces.row_gap, 3);
+        assert_eq!(
+            config.ui.sidebar.spaces.animation,
+            SpacesSidebarAnimation::NeuralPulse
+        );
     }
 
     #[test]

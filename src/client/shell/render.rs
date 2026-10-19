@@ -244,6 +244,7 @@ pub(super) struct ShellRenderState<'a> {
     pub(super) sidebar_collapsed: bool,
     pub(super) sidebar_section_split: f32,
     pub(super) tab_drag_insert_index: Option<usize>,
+    pub(super) spaces_animation_frame: usize,
     pub(super) selected_workspace_id: Option<&'a WorkspaceNavigationTarget>,
     pub(super) reveal_navigation_workspace: &'a mut bool,
     pub(super) dragged_workspace_id: Option<&'a str>,
@@ -296,6 +297,7 @@ pub(super) fn render_shell(
                 state
                     .selected_workspace_id
                     .map(|target| target.workspace_id.as_str()),
+                state.spaces_animation_frame,
                 &mut hits,
             );
         } else {

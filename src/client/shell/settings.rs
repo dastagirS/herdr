@@ -17,6 +17,13 @@ fn indicator_index(style: crate::config::StatusIndicatorStyle) -> usize {
     usize::from(style == crate::config::StatusIndicatorStyle::Symbols)
 }
 
+fn spaces_animation_index(animation: crate::config::SpacesSidebarAnimation) -> usize {
+    crate::config::SpacesSidebarAnimation::ALL
+        .iter()
+        .position(|candidate| *candidate == animation)
+        .unwrap_or(0)
+}
+
 fn toast_index(delivery: crate::config::ToastDelivery) -> usize {
     match delivery {
         crate::config::ToastDelivery::Off => 0,
@@ -49,6 +56,7 @@ impl ClientShellState {
         match section {
             ClientSettingsSection::Theme => theme_index(&self.config.theme_name),
             ClientSettingsSection::Indicators => indicator_index(self.config.status_indicators),
+            ClientSettingsSection::Spaces => spaces_animation_index(self.config.spaces.animation),
             ClientSettingsSection::Sound => usize::from(!self.config.sound_enabled),
             ClientSettingsSection::Toast => toast_index(self.config.toast_delivery),
             ClientSettingsSection::Integrations => 0,
@@ -98,6 +106,7 @@ impl ClientShellState {
             Some(ClientShellOverlay::Settings(settings)) => match settings.section {
                 ClientSettingsSection::Theme => crate::config::THEME_NAMES.len(),
                 ClientSettingsSection::Indicators | ClientSettingsSection::Sound => 2,
+                ClientSettingsSection::Spaces => crate::config::SpacesSidebarAnimation::ALL.len(),
                 ClientSettingsSection::Toast => 4,
                 ClientSettingsSection::Integrations => settings.integrations.len(),
             },
@@ -204,6 +213,16 @@ impl ClientShellState {
                 };
                 self.save_settings_edit(
                     crate::config::ConfigEdit::StatusIndicators(style),
+                    outcome,
+                );
+            }
+            ClientSettingsSection::Spaces => {
+                let Some(animation) = crate::config::SpacesSidebarAnimation::ALL.get(selected)
+                else {
+                    return;
+                };
+                self.save_settings_edit(
+                    crate::config::ConfigEdit::SpacesAnimation(*animation),
                     outcome,
                 );
             }

@@ -51,6 +51,7 @@ pub(crate) fn render_collapsed_sidebar(
     snapshot: &ClientShellSnapshot,
     config: &ClientShellConfig,
     selected_workspace_id: Option<&str>,
+    animation_frame: usize,
     hits: &mut ShellHitMap,
 ) {
     let palette = &config.palette;
@@ -100,7 +101,12 @@ pub(crate) fn render_collapsed_sidebar(
             rect.x.saturating_add(2),
             rect.y,
             rect.width.saturating_sub(2),
-            status_icon(status, config.status_indicators),
+            spaces_status_icon(
+                status,
+                config.status_indicators,
+                config.spaces.animation,
+                animation_frame,
+            ),
             Style::default().fg(status_color(status, palette)),
         );
         hits.workspaces.push(WorkspaceHit {
@@ -331,6 +337,8 @@ pub(crate) fn render_sidebar(
             rect,
             status,
             config.status_indicators,
+            config.spaces.animation,
+            state.spaces_animation_frame,
             entry,
             rows,
             workspace.focused,
@@ -701,6 +709,8 @@ pub(in crate::client::shell) fn render_workspace_rows(
     area: Rect,
     status: crate::api::schema::AgentStatus,
     indicators: crate::config::StatusIndicatorStyle,
+    animation: crate::config::SpacesSidebarAnimation,
+    animation_frame: usize,
     entry: &WorkspaceEntry,
     rows: Vec<Vec<crate::ui::ResolvedToken>>,
     focused: bool,
@@ -760,7 +770,7 @@ pub(in crate::client::shell) fn render_workspace_rows(
         let spans = crate::ui::resolved_token_spans(
             row,
             (
-                status_icon(status, indicators),
+                spaces_status_icon(status, indicators, animation, animation_frame),
                 Style::default().fg(status_color(status, palette)),
             ),
             Style::default().fg(status_color(status, palette)),
