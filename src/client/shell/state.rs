@@ -1885,7 +1885,16 @@ impl ClientShellState {
     }
 
     pub(crate) fn tick_spaces_animation(&mut self) -> bool {
-        if self.config.spaces.animation == crate::config::SpacesSidebarAnimation::Static {
+        let settings_preview_visible = matches!(
+            self.overlay,
+            Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
+                section: ClientSettingsSection::Spaces,
+                ..
+            }))
+        );
+        if self.config.spaces.animation == crate::config::SpacesSidebarAnimation::Static
+            && !settings_preview_visible
+        {
             return false;
         }
         let working_workspace_exists = self.snapshot.as_deref().is_some_and(|snapshot| {
@@ -1902,7 +1911,7 @@ impl ClientShellState {
                     workspace.agent_status == crate::api::schema::AgentStatus::Working
                 })
             });
-        if !working_workspace_exists {
+        if !working_workspace_exists && !settings_preview_visible {
             return false;
         }
         self.spaces_animation_frame =

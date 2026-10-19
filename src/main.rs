@@ -364,8 +364,8 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # Custom values reported through workspace metadata use a $name token, for example $jj_status.
 # Inline token styles accept strict #RGB/#RRGGBB foregrounds plus bold and dim booleans.
 # [ui.sidebar.spaces]
-# Spaces working animation: "static", "neural-pulse", "orbit-dots", "pacman", or
-# "neon-bounce". It is shown only while a Space is working.
+# Spaces working animation: "static", "spinner", "orb", "orb-gyro", "neural-pulse",
+# "orbit-dots", "pacman", or "neon-bounce". It is shown only while a Space is working.
 # animation = "static"
 # Blank rows between space entries. Set to 1 to restore the previous spacing.
 # row_gap = 0

@@ -460,6 +460,9 @@ impl Default for AgentsSidebarConfig {
 pub enum SpacesSidebarAnimation {
     #[default]
     Static,
+    Spinner,
+    Orb,
+    OrbGyro,
     NeuralPulse,
     OrbitDots,
     Pacman,
@@ -467,8 +470,11 @@ pub enum SpacesSidebarAnimation {
 }
 
 impl SpacesSidebarAnimation {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 8] = [
         Self::Static,
+        Self::Spinner,
+        Self::Orb,
+        Self::OrbGyro,
         Self::NeuralPulse,
         Self::OrbitDots,
         Self::Pacman,
@@ -478,6 +484,9 @@ impl SpacesSidebarAnimation {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Static => "static",
+            Self::Spinner => "spinner",
+            Self::Orb => "orb",
+            Self::OrbGyro => "orb-gyro",
             Self::NeuralPulse => "neural-pulse",
             Self::OrbitDots => "orbit-dots",
             Self::Pacman => "pacman",
@@ -487,11 +496,14 @@ impl SpacesSidebarAnimation {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Static => "static dots  ●",
-            Self::NeuralPulse => "neural pulse  o-o-O",
-            Self::OrbitDots => "orbit dots  . O .",
-            Self::Pacman => "pacman  C...",
-            Self::NeonBounce => "neon bounce  ooo",
+            Self::Static => "static dots",
+            Self::Spinner => "braille spinner",
+            Self::Orb => "thinking orb",
+            Self::OrbGyro => "thinking orb gyro",
+            Self::NeuralPulse => "neural pulse",
+            Self::OrbitDots => "orbit dots",
+            Self::Pacman => "pacman",
+            Self::NeonBounce => "neon bounce",
         }
     }
 }

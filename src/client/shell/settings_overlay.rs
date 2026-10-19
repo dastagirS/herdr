@@ -37,6 +37,7 @@ pub(super) fn render_settings_overlay(
     buffer: &mut Buffer,
     settings: &ClientSettingsOverlay,
     integration_updates_available: bool,
+    animation_frame: usize,
     palette: &Palette,
 ) -> Option<OverlayRender> {
     let integration_height = 14u16
@@ -171,15 +172,11 @@ pub(super) fn render_settings_overlay(
             );
         }
         ClientSettingsSection::Spaces => {
-            let choices =
-                crate::config::SpacesSidebarAnimation::ALL.map(|animation| animation.label());
-            render_choice_section(
+            render_spaces_animation_section(
                 buffer,
                 content,
-                "Spaces working animation",
-                "choose the compact animation shown while a Space is working",
-                &choices,
                 settings.selected,
+                animation_frame,
                 palette,
                 &mut choice_hits,
             );
@@ -266,6 +263,55 @@ pub(super) fn render_settings_overlay(
         settings_choices: choice_hits,
         ..OverlayRender::default()
     })
+}
+
+fn render_spaces_animation_section(
+    buffer: &mut Buffer,
+    area: Rect,
+    selected: usize,
+    animation_frame: usize,
+    palette: &Palette,
+    hits: &mut Vec<(Rect, usize)>,
+) {
+    put_text(
+        buffer,
+        area.x,
+        area.y,
+        area.width,
+        "Spaces working animation",
+        Style::default()
+            .fg(palette.text)
+            .bg(palette.panel_bg)
+            .add_modifier(Modifier::BOLD),
+    );
+    put_text(
+        buffer,
+        area.x,
+        area.y + 1,
+        area.width,
+        "choose the compact animation shown while a Space is working",
+        Style::default().fg(palette.overlay1).bg(palette.panel_bg),
+    );
+    let row_gap = 0u16;
+    for (index, animation) in crate::config::SpacesSidebarAnimation::ALL
+        .iter()
+        .enumerate()
+    {
+        let y = area.y + 3 + index as u16 * (1 + row_gap);
+        if y >= area.bottom() {
+            break;
+        }
+        let rect = Rect::new(area.x, y, area.width, 1);
+        let icon = super::super::spaces_status_icon(
+            crate::api::schema::AgentStatus::Working,
+            crate::config::StatusIndicatorStyle::Dots,
+            *animation,
+            animation_frame,
+        );
+        let label = format!("{}  {icon}", animation.label());
+        draw_choice(buffer, rect, &label, index == selected, false, palette);
+        hits.push((rect, index));
+    }
 }
 
 fn render_choice_section(

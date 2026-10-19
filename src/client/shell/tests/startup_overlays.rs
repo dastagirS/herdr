@@ -1175,11 +1175,72 @@ fn spaces_animation_settings_section_lists_all_animation_choices() {
         }))
     ));
     assert!(text.contains("Spaces working animation"));
-    assert!(text.contains("neural pulse  o-o-O"));
-    assert!(text.contains("orbit dots  . O ."));
-    assert!(text.contains("pacman  C..."));
-    assert!(text.contains("neon bounce  ooo"));
-    assert_eq!(state.hits.settings_choices.len(), 5);
+    assert!(text.contains("braille spinner"));
+    assert!(text.contains("thinking orb"));
+    assert!(text.contains("thinking orb gyro"));
+    assert!(text.contains("neural pulse"));
+    assert!(text.contains("orbit dots"));
+    assert!(text.contains("pacman"));
+    assert!(text.contains("neon bounce"));
+    assert!(text.contains("⠋"));
+    assert!(text.contains("·○·"));
+    assert!(text.contains("◌·"));
+    assert_eq!(state.hits.settings_choices.len(), 8);
+    assert!(state.tick_spaces_animation());
+    let next_frame = state.compose(106, 30).expect("next spaces settings frame");
+    let next_text = next_frame
+        .cells
+        .iter()
+        .map(|cell| cell.symbol.as_str())
+        .collect::<String>();
+    assert!(next_text.contains("⠙"));
+}
+
+#[test]
+fn applying_spaces_animation_does_not_request_server_config_reload() {
+    let _guard = crate::config::test_config_env_lock().lock().unwrap();
+    struct ConfigPathGuard(Option<std::ffi::OsString>);
+    impl Drop for ConfigPathGuard {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(previous) => std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, previous),
+                None => std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR),
+            }
+        }
+    }
+
+    let path = std::env::temp_dir().join(format!(
+        "herdr-spaces-animation-settings-{}-{}.toml",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should follow unix epoch")
+            .as_nanos()
+    ));
+    let _config_path_guard = ConfigPathGuard(std::env::var_os(crate::config::CONFIG_PATH_ENV_VAR));
+    std::fs::write(&path, "[ui]\nagent_panel = false\n").unwrap();
+    std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
+
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.open_settings_overlay();
+    let mut outcome = ClientShellInput::default();
+    state.select_settings_section(ClientSettingsSection::Spaces, &mut outcome);
+    state.move_settings_selection(1);
+    state.apply_settings_choice(&mut outcome);
+
+    let requested_server_reload = outcome.actions.iter().any(|action| {
+        matches!(
+            action,
+            ClientShellAction::Endpoint { request, .. }
+                if matches!(request.method, crate::api::schema::Method::ServerReloadConfig(_))
+        )
+    });
+    let saved = std::fs::read_to_string(&path).expect("animation setting should be saved");
+    let _ = std::fs::remove_file(path);
+
+    assert!(!requested_server_reload);
+    assert!(saved.contains("animation = \"spinner\""));
 }
 
 #[test]

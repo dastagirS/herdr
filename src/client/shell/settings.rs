@@ -179,13 +179,16 @@ impl ClientShellState {
             return false;
         }
         self.reload_client_config();
-        self.push_endpoint_method_with_kind(
-            crate::api::schema::Method::ServerReloadConfig(
-                crate::api::schema::EmptyParams::default(),
-            ),
-            PendingEndpointKind::ReloadConfig,
-            outcome,
-        );
+        // Spaces animations are client-rendered; an older server would report the new key as unknown.
+        if edit.requires_server_reload() {
+            self.push_endpoint_method_with_kind(
+                crate::api::schema::Method::ServerReloadConfig(
+                    crate::api::schema::EmptyParams::default(),
+                ),
+                PendingEndpointKind::ReloadConfig,
+                outcome,
+            );
+        }
         outcome.repaint = true;
         true
     }

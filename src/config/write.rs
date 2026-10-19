@@ -18,6 +18,10 @@ impl ConfigEdit<'_> {
         }
     }
 
+    pub(crate) fn requires_server_reload(self) -> bool {
+        !matches!(self, Self::SpacesAnimation(_))
+    }
+
     pub(crate) fn apply(self, content: &str) -> String {
         match self {
             Self::Theme(name) => {

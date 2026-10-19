@@ -175,7 +175,10 @@ fn pane_surface_topology_signature(surface: &PaneSurfaceFrame) -> u64 {
     hash
 }
 
-pub(super) const SPACES_ANIMATION_FRAME_COUNT: usize = 8;
+pub(super) const SPACES_ANIMATION_FRAME_COUNT: usize = 10;
+const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const ORB_FRAMES: [&str; 8] = ["·○·", "·◌·", "·◍·", "·●·", "·◉·", "·●·", "·◍·", "·◌·"];
+const ORB_GYRO_FRAMES: [&str; 8] = ["◌·", "◍·", "◉·", "·◉", "·◍", "·◌", "◌·", "◍·"];
 const NEURAL_PULSE_FRAMES: [&str; 4] = ["o-o-O", "o-O-o", "O-o-o", "o-O-o"];
 const ORBIT_DOTS_FRAMES: [&str; 8] = [
     ". . .", ". o .", ". O .", ". o .", ". . .", ". . o", ". . O", ". . o",
@@ -219,6 +222,13 @@ pub(super) fn spaces_status_icon(
     }
     match animation {
         crate::config::SpacesSidebarAnimation::Static => status_icon(status, style),
+        crate::config::SpacesSidebarAnimation::Spinner => {
+            SPINNER_FRAMES[frame % SPINNER_FRAMES.len()]
+        }
+        crate::config::SpacesSidebarAnimation::Orb => ORB_FRAMES[frame % ORB_FRAMES.len()],
+        crate::config::SpacesSidebarAnimation::OrbGyro => {
+            ORB_GYRO_FRAMES[frame % ORB_GYRO_FRAMES.len()]
+        }
         crate::config::SpacesSidebarAnimation::NeuralPulse => {
             NEURAL_PULSE_FRAMES[frame % NEURAL_PULSE_FRAMES.len()]
         }

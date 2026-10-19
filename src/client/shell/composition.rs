@@ -671,6 +671,7 @@ impl ClientShellState {
                     &self.endpoints,
                     &self.active_endpoint_id,
                     &self.config.keybinds,
+                    self.spaces_animation_frame,
                     &self.config.palette,
                 )?;
                 occlusion.cover(rendered.area);
