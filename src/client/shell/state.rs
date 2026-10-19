@@ -21,7 +21,6 @@ pub(crate) struct ClientShellConfig {
     pub(super) mobile_width_threshold: u16,
     pub(super) tab_bar_position: TabBarPositionConfig,
     pub(super) hide_tab_bar_when_single_tab: bool,
-    pub(super) tab_loading_indicator: crate::config::TabLoadingIndicator,
     pub(super) agent_panel: bool,
     pub(super) spaces: SpacesSidebarConfig,
     pub(super) agents: crate::config::AgentsSidebarConfig,
@@ -388,7 +387,6 @@ pub(super) enum ClientSettingsSection {
     Theme,
     Indicators,
     Spaces,
-    Tabs,
     Sound,
     Toast,
     Integrations,
@@ -399,7 +397,6 @@ impl ClientSettingsSection {
         Self::Theme,
         Self::Indicators,
         Self::Spaces,
-        Self::Tabs,
         Self::Sound,
         Self::Toast,
         Self::Integrations,
@@ -410,7 +407,6 @@ impl ClientSettingsSection {
             Self::Theme => "theme",
             Self::Indicators => "indicators",
             Self::Spaces => "spaces",
-            Self::Tabs => "tabs",
             Self::Sound => "sound",
             Self::Toast => "toasts",
             Self::Integrations => "integrations",
@@ -1889,47 +1885,33 @@ impl ClientShellState {
     }
 
     pub(crate) fn tick_spaces_animation(&mut self) -> bool {
-        let spaces_preview_visible = matches!(
+        let settings_preview_visible = matches!(
             self.overlay,
             Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
                 section: ClientSettingsSection::Spaces,
                 ..
             }))
         );
-        let tabs_preview_visible = matches!(
-            self.overlay,
-            Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
-                section: ClientSettingsSection::Tabs,
-                ..
-            }))
-        );
-        let animation_enabled = self.config.spaces.animation
-            != crate::config::SpacesSidebarAnimation::Static
-            || self.config.tab_loading_indicator.is_animated();
-        if !animation_enabled && !spaces_preview_visible && !tabs_preview_visible {
+        if self.config.spaces.animation == crate::config::SpacesSidebarAnimation::Static
+            && !settings_preview_visible
+        {
             return false;
         }
-        let working_status_exists =
-            self.snapshot.as_deref().is_some_and(|snapshot| {
+        let working_workspace_exists = self.snapshot.as_deref().is_some_and(|snapshot| {
+            snapshot
+                .workspaces
+                .iter()
+                .any(|workspace| workspace.agent_status == crate::api::schema::AgentStatus::Working)
+        }) || self
+            .endpoints
+            .iter()
+            .filter_map(|endpoint| endpoint.snapshot.as_deref())
+            .any(|snapshot| {
                 snapshot.workspaces.iter().any(|workspace| {
                     workspace.agent_status == crate::api::schema::AgentStatus::Working
-                }) || snapshot
-                    .tabs
-                    .iter()
-                    .any(|tab| tab.agent_status == crate::api::schema::AgentStatus::Working)
-            }) || self
-                .endpoints
-                .iter()
-                .filter_map(|endpoint| endpoint.snapshot.as_deref())
-                .any(|snapshot| {
-                    snapshot.workspaces.iter().any(|workspace| {
-                        workspace.agent_status == crate::api::schema::AgentStatus::Working
-                    }) || snapshot
-                        .tabs
-                        .iter()
-                        .any(|tab| tab.agent_status == crate::api::schema::AgentStatus::Working)
-                });
-        if !working_status_exists && !spaces_preview_visible && !tabs_preview_visible {
+                })
+            });
+        if !working_workspace_exists && !settings_preview_visible {
             return false;
         }
         self.spaces_animation_frame =

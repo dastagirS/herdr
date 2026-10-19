@@ -1006,19 +1006,6 @@
           "description": "Hide the tab row when the workspace has one tab."
         },
         {
-          "key": "ui.tab_loading_indicator",
-          "type": "enum",
-          "default": "\"spinner\"",
-          "description": "Marker shown in tabs containing a working agent. Client-only; choose off, static, spinner, pulse, or arc.",
-          "values": [
-            "off",
-            "static",
-            "spinner",
-            "pulse",
-            "arc"
-          ]
-        },
-        {
           "key": "ui.tab_bar_position",
           "type": "enum",
           "default": "\"top\"",

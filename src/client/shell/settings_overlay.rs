@@ -181,16 +181,6 @@ pub(super) fn render_settings_overlay(
                 &mut choice_hits,
             );
         }
-        ClientSettingsSection::Tabs => {
-            render_tab_loading_indicator_section(
-                buffer,
-                content,
-                settings.selected,
-                animation_frame,
-                palette,
-                &mut choice_hits,
-            );
-        }
         ClientSettingsSection::Sound => {
             render_choice_section(
                 buffer,
@@ -319,51 +309,6 @@ fn render_spaces_animation_section(
             animation_frame,
         );
         let label = format!("{}  {icon}", animation.label());
-        draw_choice(buffer, rect, &label, index == selected, false, palette);
-        hits.push((rect, index));
-    }
-}
-
-fn render_tab_loading_indicator_section(
-    buffer: &mut Buffer,
-    area: Rect,
-    selected: usize,
-    animation_frame: usize,
-    palette: &Palette,
-    hits: &mut Vec<(Rect, usize)>,
-) {
-    put_text(
-        buffer,
-        area.x,
-        area.y,
-        area.width,
-        "Tab working indicator",
-        Style::default()
-            .fg(palette.text)
-            .bg(palette.panel_bg)
-            .add_modifier(Modifier::BOLD),
-    );
-    put_text(
-        buffer,
-        area.x,
-        area.y + 1,
-        area.width,
-        "choose the marker shown while an agent is working in a tab",
-        Style::default().fg(palette.overlay1).bg(palette.panel_bg),
-    );
-    for (index, indicator) in crate::config::TabLoadingIndicator::ALL.iter().enumerate() {
-        let y = area.y + 3 + index as u16;
-        if y >= area.bottom() {
-            break;
-        }
-        let rect = Rect::new(area.x, y, area.width, 1);
-        let icon = super::super::tab_loading_icon(
-            *indicator,
-            crate::config::StatusIndicatorStyle::Symbols,
-            animation_frame,
-        )
-        .unwrap_or("—");
-        let label = format!("{}  {icon}", indicator.label());
         draw_choice(buffer, rect, &label, index == selected, false, palette);
         hits.push((rect, index));
     }

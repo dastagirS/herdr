@@ -319,13 +319,6 @@ Set `ui.sidebar.spaces.animation` to `"spinner"`, `"pulse"`, `"arc"`, `"neural-p
 
 Set `tab_bar_position = "bottom"` under `[ui]` to place the desktop tab row below the terminal panes. Prefix, Navigate, Copy, and Resize mode bars temporarily replace the bottom tab row while active. The default is `"top"`.
 
-Tabs containing a working agent show a compact loading marker by default. Configure it with `tab_loading_indicator` under `[ui]`; choose `"off"`, `"static"`, `"spinner"`, `"pulse"`, or `"arc"`. This is client-only and does not require a server reload:
-
-```toml
-[ui]
-tab_loading_indicator = "spinner"
-```
-
 Configure an ordered tmux-style status area at the right edge of the tab row:
 
 ```toml

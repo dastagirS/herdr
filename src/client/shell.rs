@@ -229,22 +229,6 @@ pub(super) fn spaces_status_icon(
     }
 }
 
-pub(super) fn tab_loading_icon(
-    indicator: crate::config::TabLoadingIndicator,
-    style: crate::config::StatusIndicatorStyle,
-    frame: usize,
-) -> Option<&'static str> {
-    use crate::api::schema::AgentStatus;
-
-    Some(match indicator {
-        crate::config::TabLoadingIndicator::Off => return None,
-        crate::config::TabLoadingIndicator::Static => status_icon(AgentStatus::Working, style),
-        crate::config::TabLoadingIndicator::Spinner => SPINNER_FRAMES[frame % SPINNER_FRAMES.len()],
-        crate::config::TabLoadingIndicator::Pulse => PULSE_FRAMES[frame % PULSE_FRAMES.len()],
-        crate::config::TabLoadingIndicator::Arc => ARC_FRAMES[frame % ARC_FRAMES.len()],
-    })
-}
-
 fn status_dot(status: crate::api::schema::AgentStatus) -> &'static str {
     status_icon(status, crate::config::StatusIndicatorStyle::Dots)
 }

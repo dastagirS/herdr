@@ -880,51 +880,6 @@ pub enum TabBarPositionConfig {
     Bottom,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
-#[serde(rename_all = "kebab-case")]
-pub enum TabLoadingIndicator {
-    Off,
-    Static,
-    #[default]
-    Spinner,
-    Pulse,
-    Arc,
-}
-
-impl TabLoadingIndicator {
-    pub const ALL: [Self; 5] = [
-        Self::Off,
-        Self::Static,
-        Self::Spinner,
-        Self::Pulse,
-        Self::Arc,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Static => "static",
-            Self::Spinner => "spinner",
-            Self::Pulse => "pulse",
-            Self::Arc => "arc",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Static => "static dot",
-            Self::Spinner => "braille spinner",
-            Self::Pulse => "dot pulse",
-            Self::Arc => "arc spinner",
-        }
-    }
-
-    pub fn is_animated(self) -> bool {
-        matches!(self, Self::Spinner | Self::Pulse | Self::Arc)
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PaneBordersConfig {
     #[default]
@@ -1027,8 +982,6 @@ pub struct UiConfig {
     pub show_agent_labels_on_pane_borders: bool,
     /// Hide the tab row when the workspace has one tab. Default: false.
     pub hide_tab_bar_when_single_tab: bool,
-    /// Loading marker shown in tabs containing a working agent. Default: "spinner".
-    pub tab_loading_indicator: TabLoadingIndicator,
     /// Desktop tab row placement. Default: top.
     pub tab_bar_position: TabBarPositionConfig,
     /// Ordered entries shown at the right edge of the desktop tab row. Empty by default.
@@ -1268,7 +1221,6 @@ impl Default for UiConfig {
             pane_gaps: true,
             show_agent_labels_on_pane_borders: false,
             hide_tab_bar_when_single_tab: false,
-            tab_loading_indicator: TabLoadingIndicator::Spinner,
             tab_bar_position: TabBarPositionConfig::Top,
             tab_bar_right: Vec::new(),
             tab_bar_right_separator: " ".into(),
@@ -1590,10 +1542,6 @@ status_indicators = "symbols"
         assert!(!default_config.ui.show_agent_labels_on_pane_borders);
         assert!(!default_config.ui.hide_tab_bar_when_single_tab);
         assert_eq!(
-            default_config.ui.tab_loading_indicator,
-            TabLoadingIndicator::Spinner
-        );
-        assert_eq!(
             default_config.ui.tab_bar_position,
             TabBarPositionConfig::Top
         );
@@ -1608,7 +1556,6 @@ pane_scrollbars = false
 pane_gaps = true
 show_agent_labels_on_pane_borders = true
 hide_tab_bar_when_single_tab = true
-tab_loading_indicator = "arc"
 tab_bar_position = "bottom"
 tab_bar_right = [
   { type = "zoom" },
@@ -1626,7 +1573,6 @@ tab_bar_right_separator = " · "
         assert!(config.ui.pane_gaps);
         assert!(config.ui.show_agent_labels_on_pane_borders);
         assert!(config.ui.hide_tab_bar_when_single_tab);
-        assert_eq!(config.ui.tab_loading_indicator, TabLoadingIndicator::Arc);
         assert_eq!(config.ui.tab_bar_position, TabBarPositionConfig::Bottom);
         assert_eq!(config.ui.tab_bar_right.len(), 5);
         assert!(matches!(

@@ -320,7 +320,6 @@ pub(super) fn render_shell(
             state.tab_scroll,
             state.reveal_focused_tab,
             state.tab_drag_insert_index,
-            state.spaces_animation_frame,
             &mut hits,
         );
     }
