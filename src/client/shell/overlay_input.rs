@@ -936,6 +936,11 @@ impl ClientShellState {
         };
         let trimmed = rename.input.trim();
         let method = match rename.target {
+            ClientRenameTarget::Folder { endpoint_id, key } => {
+                self.set_folder_label(&endpoint_id, key, &trimmed);
+                self.persist_chrome_preferences(outcome);
+                None
+            }
             ClientRenameTarget::NewWorkspace {
                 source_workspace_id,
                 cwd,

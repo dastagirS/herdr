@@ -6,6 +6,13 @@ impl ClientContextMenuOverlay {
 
         let item = |label, action| ClientContextMenuItem { label, action };
         match &self.target {
+            ClientContextMenuTarget::Folder { collapsed, .. } => vec![
+                item("Rename", Action::Rename),
+                item(
+                    if *collapsed { "Expand" } else { "Collapse" },
+                    Action::ToggleGroup,
+                ),
+            ],
             ClientContextMenuTarget::Workspace { is_git: false, .. } => {
                 vec![item("Rename", Action::Rename), item("Close", Action::Close)]
             }
@@ -123,6 +130,40 @@ impl ClientShellState {
         }));
     }
 
+    pub(super) fn open_folder_context_menu(
+        &mut self,
+        endpoint_id: ClientEndpointId,
+        key: String,
+        x: u16,
+        y: u16,
+    ) {
+        let Some(snapshot) = self
+            .endpoints
+            .iter()
+            .find(|endpoint| endpoint.endpoint_id == endpoint_id)
+            .and_then(|endpoint| endpoint.snapshot.as_deref())
+        else {
+            return;
+        };
+        if !snapshot
+            .workspaces
+            .iter()
+            .any(|workspace| super::sidebar::workspace_folder_key(workspace) == key)
+        {
+            return;
+        }
+        self.overlay = Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
+            target: ClientContextMenuTarget::Folder {
+                collapsed: self.group_is_collapsed(&endpoint_id, &key),
+                endpoint_id,
+                key,
+            },
+            x,
+            y,
+            highlighted: 0,
+        }));
+    }
+
     pub(super) fn open_tab_context_menu(&mut self, tab_id: String, x: u16, y: u16) {
         let Some(tab) = self
             .snapshot
@@ -192,6 +233,9 @@ impl ClientShellState {
             return;
         };
         match menu.target {
+            ClientContextMenuTarget::Folder {
+                endpoint_id, key, ..
+            } => self.activate_folder_context_action(endpoint_id, key, action, outcome),
             ClientContextMenuTarget::Workspace {
                 workspace_id,
                 close_group,
@@ -217,6 +261,47 @@ impl ClientShellState {
             ),
         }
         outcome.repaint = true;
+    }
+
+    fn activate_folder_context_action(
+        &mut self,
+        endpoint_id: ClientEndpointId,
+        key: String,
+        action: ClientContextMenuAction,
+        outcome: &mut ClientShellInput,
+    ) {
+        match action {
+            ClientContextMenuAction::Rename => self.open_folder_rename_overlay(endpoint_id, key),
+            ClientContextMenuAction::ToggleGroup => {
+                self.toggle_collapsed_group(&endpoint_id, key);
+                self.persist_chrome_preferences(outcome);
+            }
+            _ => {}
+        }
+    }
+
+    fn open_folder_rename_overlay(&mut self, endpoint_id: ClientEndpointId, key: String) {
+        let Some(snapshot) = self
+            .endpoints
+            .iter()
+            .find(|endpoint| endpoint.endpoint_id == endpoint_id)
+            .and_then(|endpoint| endpoint.snapshot.as_deref())
+        else {
+            return;
+        };
+        let Some(workspace) = snapshot
+            .workspaces
+            .iter()
+            .find(|workspace| super::sidebar::workspace_folder_key(workspace) == key)
+        else {
+            return;
+        };
+        let label = self.folder_label_for_endpoint(&endpoint_id, &key, workspace);
+        self.overlay = Some(ClientShellOverlay::Rename(ClientRenameOverlay {
+            title: "rename folder",
+            input: TextEditor::new(&label, false),
+            target: ClientRenameTarget::Folder { endpoint_id, key },
+        }));
     }
 
     fn activate_workspace_context_action(

@@ -163,6 +163,32 @@ fn mobile_switcher_can_activate_an_online_saved_machine() {
 }
 
 #[test]
+fn mobile_switcher_uses_custom_folder_labels() {
+    let mut projected = snapshot();
+    projected.workspaces[0].worktree = Some(ClientShellWorktree {
+        key: "repo".into(),
+        label: "repo".into(),
+        is_linked_worktree: false,
+    });
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected));
+    state
+        .folder_labels
+        .insert("repo".into(), "Renamed repo".into());
+    state.set_pane_surface(surface());
+    state.mode = ClientShellMode::Navigate;
+
+    let frame = state.compose(44, 30).expect("mobile folder label");
+    let text = frame
+        .cells
+        .iter()
+        .map(|cell| cell.symbol.as_str())
+        .collect::<String>();
+    assert!(text.contains("Renamed repo"), "frame: {text}");
+    assert!(!text.contains("▾ repo"), "frame: {text}");
+}
+
+#[test]
 fn mobile_shell_controls_remain_clickable_when_pane_mouse_capture_is_disabled() {
     let mut config = ClientShellConfig::from_config(&Config::default());
     config.mouse_capture = false;

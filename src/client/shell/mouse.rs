@@ -1814,6 +1814,17 @@ impl ClientShellState {
                 if !self.config.mouse_capture {
                     return;
                 }
+                let folder = self
+                    .hits
+                    .folder_toggles
+                    .iter()
+                    .find(|(rect, _, _)| super::contains(*rect, point))
+                    .map(|(_, endpoint_id, key)| (endpoint_id.clone(), key.clone()));
+                if let Some((endpoint_id, key)) = folder {
+                    self.open_folder_context_menu(endpoint_id, key, mouse.column, mouse.row);
+                    outcome.repaint = true;
+                    return;
+                }
                 let workspace_id = (!self.sidebar_collapsed)
                     .then(|| self.active_endpoint_workspace_at(point))
                     .flatten();

@@ -202,6 +202,9 @@ fn manual_client_chrome_preferences_round_trip_per_endpoint() {
     state.collapsed_groups.insert("repo-two".into());
     state.collapsed_groups.insert("repo-one".into());
     state.expanded_groups.insert("repo-expanded".into());
+    state
+        .folder_labels
+        .insert("repo".into(), "Renamed repo".into());
     let profile =
         SavedSshEndpoint::new("Build", "dev@build.example", "agents").expect("saved SSH profile");
     let remote_id = ClientEndpointId::Ssh(profile.id.clone());
@@ -211,10 +214,16 @@ fn manual_client_chrome_preferences_round_trip_per_endpoint() {
     state
         .remote_expanded_groups
         .insert(remote_id.clone(), HashSet::from(["/expanded".to_owned()]));
+    state.remote_folder_labels.insert(
+        remote_id.clone(),
+        HashMap::from([(String::from("/repo"), String::from("Remote repo"))]),
+    );
     state.persist_chrome_preferences(&mut ClientShellInput::default());
     let stored = std::fs::read_to_string(&path).expect("stored client chrome preferences");
     assert!(stored.contains(profile.id.as_str()));
     assert!(stored.contains("repo-one"));
+    assert!(stored.contains("Renamed repo"));
+    assert!(stored.contains("Remote repo"));
     assert!(!stored.contains(&profile.label));
     assert!(!stored.contains(&profile.target));
 
@@ -236,12 +245,24 @@ fn manual_client_chrome_preferences_round_trip_per_endpoint() {
         HashSet::from(["repo-expanded".to_string()])
     );
     assert_eq!(
+        reloaded.folder_labels.get("repo").map(String::as_str),
+        Some("Renamed repo")
+    );
+    assert_eq!(
         reloaded.remote_collapsed_groups.get(&remote_id),
         Some(&HashSet::from(["/repo".to_owned()]))
     );
     assert_eq!(
         reloaded.remote_expanded_groups.get(&remote_id),
         Some(&HashSet::from(["/expanded".to_owned()]))
+    );
+    assert_eq!(
+        reloaded
+            .remote_folder_labels
+            .get(&remote_id)
+            .and_then(|labels| labels.get("/repo"))
+            .map(String::as_str),
+        Some("Remote repo")
     );
     let mut reloaded = reloaded;
     reloaded.persist_chrome_preferences(&mut ClientShellInput::default());

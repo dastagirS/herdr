@@ -34,10 +34,20 @@ impl ClientShellState {
         collapsed_groups.sort();
         let mut expanded_groups = self.expanded_groups.iter().cloned().collect::<Vec<_>>();
         expanded_groups.sort();
+        let mut folder_labels = self
+            .folder_labels
+            .iter()
+            .map(|(key, label)| preferences::ClientFolderLabel {
+                key: key.clone(),
+                label: label.clone(),
+            })
+            .collect::<Vec<_>>();
+        folder_labels.sort_by(|left, right| left.key.cmp(&right.key));
         let remote_endpoint_ids = self
             .remote_collapsed_groups
             .keys()
             .chain(self.remote_expanded_groups.keys())
+            .chain(self.remote_folder_labels.keys())
             .cloned()
             .collect::<HashSet<_>>();
         let mut remote_collapsed_groups = remote_endpoint_ids
@@ -70,6 +80,28 @@ impl ClientShellState {
             })
             .collect::<Vec<_>>();
         remote_collapsed_groups.sort_by(|left, right| left.profile_id.cmp(&right.profile_id));
+        let mut remote_folder_labels = self
+            .remote_folder_labels
+            .iter()
+            .filter_map(|(endpoint_id, labels)| {
+                let ClientEndpointId::Ssh(profile_id) = endpoint_id else {
+                    return None;
+                };
+                let mut labels = labels
+                    .iter()
+                    .map(|(key, label)| preferences::ClientFolderLabel {
+                        key: key.clone(),
+                        label: label.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                labels.sort_by(|left, right| left.key.cmp(&right.key));
+                (!labels.is_empty()).then(|| preferences::ClientRemoteFolderLabels {
+                    profile_id: profile_id.to_string(),
+                    labels,
+                })
+            })
+            .collect::<Vec<_>>();
+        remote_folder_labels.sort_by(|left, right| left.profile_id.cmp(&right.profile_id));
         let preferences = preferences::ClientChromePreferences {
             sidebar_width: self.sidebar_width_manual.then_some(self.sidebar_width),
             sidebar_section_split: self
@@ -84,6 +116,8 @@ impl ClientShellState {
             collapsed_groups,
             expanded_groups,
             remote_collapsed_groups,
+            folder_labels,
+            remote_folder_labels,
         };
         if let Err(error) = preferences::store(path, preferences) {
             self.set_endpoint_error(error);

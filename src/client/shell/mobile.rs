@@ -381,6 +381,8 @@ pub(super) fn render_mobile_switcher(
     endpoints: &[ClientShellEndpoint],
     active_endpoint_id: &ClientEndpointId,
     config: &ClientShellConfig,
+    folder_labels: &HashMap<String, String>,
+    remote_folder_labels: &HashMap<ClientEndpointId, HashMap<String, String>>,
     selected_workspace_id: Option<&WorkspaceNavigationTarget>,
     scroll: &mut usize,
     reveal_workspace: &mut bool,
@@ -455,6 +457,8 @@ pub(super) fn render_mobile_switcher(
         endpoints,
         active_endpoint_id,
         config,
+        folder_labels,
+        remote_folder_labels,
         selected_workspace_id,
         viewport.width.saturating_sub(1),
     );
@@ -591,6 +595,8 @@ fn mobile_items(
     endpoints: &[ClientShellEndpoint],
     active_endpoint_id: &ClientEndpointId,
     config: &ClientShellConfig,
+    folder_labels: &HashMap<String, String>,
+    remote_folder_labels: &HashMap<ClientEndpointId, HashMap<String, String>>,
     selected_workspace_id: Option<&WorkspaceNavigationTarget>,
     content_width: u16,
 ) -> Vec<MobileItem> {
@@ -773,8 +779,19 @@ fn mobile_items(
                 continue;
             };
             if entry.folder {
+                let key = super::sidebar::workspace_folder_key(workspace);
+                let custom_label = if endpoint.endpoint_id.is_local() {
+                    folder_labels.get(&key)
+                } else {
+                    remote_folder_labels
+                        .get(&endpoint.endpoint_id)
+                        .and_then(|labels| labels.get(&key))
+                };
                 items.push(MobileItem::folder(
-                    super::sidebar::workspace_folder_label(workspace),
+                    super::sidebar::workspace_folder_display_label(
+                        workspace,
+                        custom_label.map(String::as_str),
+                    ),
                     palette,
                 ));
                 continue;

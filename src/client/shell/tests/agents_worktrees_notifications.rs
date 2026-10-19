@@ -336,6 +336,66 @@ fn workspace_folders_are_collapsed_by_default() {
 }
 
 #[test]
+fn folder_context_menu_exposes_rename_action() {
+    let mut projected = snapshot();
+    projected.workspaces[0].worktree = Some(ClientShellWorktree {
+        key: "repo".into(),
+        label: "repo".into(),
+        is_linked_worktree: false,
+    });
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected));
+    state.collapsed_groups.clear();
+    state.set_pane_surface(surface());
+    state.compose(106, 24).expect("expanded folder");
+    let folder = state
+        .hits
+        .folder_toggles
+        .iter()
+        .find(|(_, endpoint_id, key)| endpoint_id.is_local() && key == "repo")
+        .expect("repository folder")
+        .0;
+
+    let outcome = state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Right),
+        column: folder.x,
+        row: folder.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+
+    assert!(outcome.repaint);
+    let rename_index = match state.overlay.as_ref() {
+        Some(ClientShellOverlay::ContextMenu(menu)) => menu
+            .items()
+            .iter()
+            .position(|item| item.label == "Rename")
+            .expect("folder rename item"),
+        _ => panic!("folder context menu"),
+    };
+    state.activate_context_menu_item(rename_index, &mut ClientShellInput::default());
+    let Some(ClientShellOverlay::Rename(rename)) = state.overlay.as_mut() else {
+        panic!("folder rename overlay");
+    };
+    rename.input.clear();
+    rename.input.insert("renamed");
+    state.save_rename_overlay(&mut ClientShellInput::default());
+    assert_eq!(
+        state.folder_labels.get("repo").map(String::as_str),
+        Some("renamed")
+    );
+    let frame = state.compose(106, 24).expect("renamed folder");
+    let folder_row = frame_rows(&frame)
+        .into_iter()
+        .find(|row| row.contains("renamed"))
+        .expect("renamed folder row");
+    assert_eq!(folder_row.matches('▾').count(), 1);
+
+    state.set_folder_label(&ClientEndpointId::Local, "repo".into(), "");
+    let frame = state.compose(106, 24).expect("fallback folder");
+    assert!(frame_rows(&frame).iter().any(|row| row.contains("repo")));
+}
+
+#[test]
 fn workspace_click_waits_for_release_and_drag_reorders_by_stable_id() {
     let mut projected = snapshot();
     for index in 2..=3 {

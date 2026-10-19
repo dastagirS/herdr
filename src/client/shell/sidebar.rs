@@ -52,6 +52,7 @@ pub(crate) fn render_collapsed_sidebar(
     config: &ClientShellConfig,
     selected_workspace_id: Option<&str>,
     animation_frame: usize,
+    folder_labels: &HashMap<String, String>,
     hits: &mut ShellHitMap,
 ) {
     let palette = &config.palette;
@@ -75,12 +76,17 @@ pub(crate) fn render_collapsed_sidebar(
             1,
         );
         if entry.folder {
+            let key = workspace_folder_key(workspace);
+            let label = workspace_folder_display_label(
+                workspace,
+                folder_labels.get(&key).map(String::as_str),
+            );
             put_text(
                 buffer,
                 rect.x,
                 rect.y,
                 rect.width,
-                &format!("▾ {}", workspace_folder_label(workspace)),
+                &format!("▾ {label}"),
                 Style::default()
                     .fg(palette.overlay1)
                     .bg(palette.sidebar_bg)
@@ -344,17 +350,22 @@ pub(crate) fn render_sidebar(
                 .workspaces
                 .iter()
                 .any(|candidate| workspace_folder_key(candidate) == key && candidate.focused);
-            if let Some((toggle, key)) = render_workspace_folder(
+            let label = workspace_folder_display_label(
+                workspace,
+                state.folder_labels.get(&key).map(String::as_str),
+            );
+            if let Some(key) = render_workspace_folder(
                 buffer,
                 folder_rect,
                 snapshot,
                 *entry,
+                &label,
                 state.collapsed_groups.contains(&key),
                 focused,
                 palette,
             ) {
                 hits.folder_toggles
-                    .push((toggle, ClientEndpointId::Local, key));
+                    .push((folder_rect, ClientEndpointId::Local, key));
             }
             y = y.saturating_add(1);
             continue;
@@ -538,6 +549,16 @@ pub(crate) fn workspace_folder_label(workspace: &ClientShellWorkspace) -> String
         .unwrap_or_else(|| workspace.label.clone())
 }
 
+pub(crate) fn workspace_folder_display_label(
+    workspace: &ClientShellWorkspace,
+    custom_label: Option<&str>,
+) -> String {
+    custom_label
+        .filter(|label| !label.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| workspace_folder_label(workspace))
+}
+
 pub(crate) fn workspace_entries(
     snapshot: &ClientShellSnapshot,
     collapsed_groups: &HashSet<String>,
@@ -585,13 +606,13 @@ pub(crate) fn render_workspace_folder(
     rect: Rect,
     snapshot: &ClientShellSnapshot,
     entry: WorkspaceEntry,
+    label: &str,
     collapsed: bool,
     focused: bool,
     palette: &Palette,
-) -> Option<(Rect, String)> {
+) -> Option<String> {
     let workspace = snapshot.workspaces.get(entry.index)?;
     let key = workspace_folder_key(workspace);
-    let toggle = Rect::new(rect.right().saturating_sub(1), rect.y, 1, 1);
     let marker = if collapsed { "▸" } else { "▾" };
     let style = Style::default()
         .fg(if focused {
@@ -610,21 +631,11 @@ pub(crate) fn render_workspace_folder(
         buffer,
         rect.x,
         rect.y,
-        rect.width.saturating_sub(1),
-        &format!("{marker} {}", workspace_folder_label(workspace)),
+        rect.width,
+        &format!("{marker} {label}"),
         style,
     );
-    put_text(
-        buffer,
-        toggle.x,
-        toggle.y,
-        toggle.width,
-        marker,
-        Style::default()
-            .fg(palette.accent)
-            .bg(style.bg.unwrap_or(palette.sidebar_bg)),
-    );
-    Some((toggle, key))
+    Some(key)
 }
 
 pub(crate) fn workspace_subworkspace_label(workspace: &ClientShellWorkspace) -> &str {

@@ -8,6 +8,19 @@ static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(1);
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub(super) struct ClientFolderLabel {
+    pub(super) key: String,
+    pub(super) label: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(super) struct ClientRemoteFolderLabels {
+    pub(super) profile_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) labels: Vec<ClientFolderLabel>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct ClientRemoteCollapsedGroups {
     pub(super) profile_id: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -32,6 +45,10 @@ pub(super) struct ClientChromePreferences {
     pub(super) expanded_groups: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) remote_collapsed_groups: Vec<ClientRemoteCollapsedGroups>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) folder_labels: Vec<ClientFolderLabel>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) remote_folder_labels: Vec<ClientRemoteFolderLabels>,
 }
 
 pub(super) fn path_for_local_endpoint(socket_path: &Path) -> PathBuf {

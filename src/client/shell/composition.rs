@@ -60,7 +60,9 @@ impl ClientShellState {
             active_endpoint_id: &self.active_endpoint_id,
             collapsed_endpoints: &self.collapsed_endpoints,
             collapsed_groups: &self.collapsed_groups,
+            folder_labels: &self.folder_labels,
             remote_collapsed_groups: &self.remote_collapsed_groups,
+            remote_folder_labels: &self.remote_folder_labels,
             workspace_scroll: &mut self.workspace_scroll,
             agent_scroll: &mut self.agent_scroll,
             tab_scroll: &mut self.tab_scroll,
@@ -217,7 +219,9 @@ impl ClientShellState {
                 active_endpoint_id: &self.active_endpoint_id,
                 collapsed_endpoints: &self.collapsed_endpoints,
                 collapsed_groups: &self.collapsed_groups,
+                folder_labels: &self.folder_labels,
                 remote_collapsed_groups: &self.remote_collapsed_groups,
+                remote_folder_labels: &self.remote_folder_labels,
                 workspace_scroll: &mut self.workspace_scroll,
                 agent_scroll: &mut self.agent_scroll,
                 tab_scroll: &mut self.tab_scroll,
@@ -609,6 +613,8 @@ impl ClientShellState {
                 &self.endpoints,
                 &self.active_endpoint_id,
                 &self.config,
+                &self.folder_labels,
+                &self.remote_folder_labels,
                 self.navigate_workspace_id
                     .as_ref()
                     .filter(|_| valid_navigation_target),

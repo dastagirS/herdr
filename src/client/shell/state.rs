@@ -296,6 +296,10 @@ pub(super) enum ClientShellOverlayKind {
 
 #[derive(Debug)]
 pub(super) enum ClientRenameTarget {
+    Folder {
+        endpoint_id: ClientEndpointId,
+        key: String,
+    },
     NewWorkspace {
         source_workspace_id: Option<String>,
         cwd: Option<String>,
@@ -533,6 +537,11 @@ pub(super) enum ClientContextMenuAction {
 
 #[derive(Debug)]
 pub(super) enum ClientContextMenuTarget {
+    Folder {
+        endpoint_id: ClientEndpointId,
+        key: String,
+        collapsed: bool,
+    },
     Workspace {
         workspace_id: String,
         is_git: bool,
@@ -886,8 +895,10 @@ pub(crate) struct ClientShellState {
     pub(super) tab_press: Option<ClientTabPress>,
     pub(super) collapsed_groups: HashSet<String>,
     pub(super) expanded_groups: HashSet<String>,
+    pub(super) folder_labels: HashMap<String, String>,
     pub(super) remote_collapsed_groups: HashMap<ClientEndpointId, HashSet<String>>,
     pub(super) remote_expanded_groups: HashMap<ClientEndpointId, HashSet<String>>,
+    pub(super) remote_folder_labels: HashMap<ClientEndpointId, HashMap<String, String>>,
     pub(super) workspace_scroll: usize,
     pub(super) agent_scroll: usize,
     pub(super) pending_agent_reveal: Option<(ClientEndpointId, String)>,
@@ -1050,6 +1061,27 @@ impl ClientShellState {
                 .extend(saved.expanded_groups);
         }
         let expanded_groups = preferences.expanded_groups.into_iter().collect();
+        let folder_labels = preferences
+            .folder_labels
+            .into_iter()
+            .filter(|entry| !entry.key.is_empty() && !entry.label.is_empty())
+            .map(|entry| (entry.key, entry.label))
+            .collect();
+        let mut remote_folder_labels = HashMap::<ClientEndpointId, HashMap<String, String>>::new();
+        for saved in preferences.remote_folder_labels {
+            let Ok(profile_id) = crate::client::endpoint::ProfileId::parse(saved.profile_id) else {
+                continue;
+            };
+            let labels = saved
+                .labels
+                .into_iter()
+                .filter(|entry| !entry.key.is_empty() && !entry.label.is_empty())
+                .map(|entry| (entry.key, entry.label))
+                .collect::<HashMap<_, _>>();
+            if !labels.is_empty() {
+                remote_folder_labels.insert(ClientEndpointId::Ssh(profile_id), labels);
+            }
+        }
         Self {
             machine_diagnostics: Default::default(),
             config,
@@ -1077,8 +1109,10 @@ impl ClientShellState {
             tab_press: None,
             collapsed_groups: preferences.collapsed_groups.into_iter().collect(),
             expanded_groups,
+            folder_labels,
             remote_collapsed_groups,
             remote_expanded_groups,
+            remote_folder_labels,
             workspace_scroll: 0,
             agent_scroll: 0,
             pending_agent_reveal: None,
@@ -1192,6 +1226,59 @@ impl ClientShellState {
     pub(super) fn group_is_collapsed(&self, endpoint_id: &ClientEndpointId, key: &str) -> bool {
         self.collapsed_groups_for_endpoint(endpoint_id)
             .is_some_and(|groups| groups.contains(key))
+    }
+
+    pub(super) fn folder_label_for_endpoint(
+        &self,
+        endpoint_id: &ClientEndpointId,
+        key: &str,
+        workspace: &ClientShellWorkspace,
+    ) -> String {
+        let custom_label = if endpoint_id.is_local() {
+            self.folder_labels.get(key)
+        } else {
+            self.remote_folder_labels
+                .get(endpoint_id)
+                .and_then(|labels| labels.get(key))
+        };
+        super::sidebar::workspace_folder_display_label(workspace, custom_label.map(String::as_str))
+    }
+
+    pub(super) fn set_folder_label(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        key: String,
+        label: &str,
+    ) {
+        if key.is_empty() {
+            return;
+        }
+        let label = label.trim();
+        if endpoint_id.is_local() {
+            if label.is_empty() {
+                self.folder_labels.remove(&key);
+            } else {
+                self.folder_labels.insert(key, label.to_owned());
+            }
+            return;
+        }
+        if label.is_empty() {
+            let remove_endpoint =
+                self.remote_folder_labels
+                    .get_mut(endpoint_id)
+                    .is_some_and(|labels| {
+                        labels.remove(&key);
+                        labels.is_empty()
+                    });
+            if remove_endpoint {
+                self.remote_folder_labels.remove(endpoint_id);
+            }
+        } else {
+            self.remote_folder_labels
+                .entry(endpoint_id.clone())
+                .or_default()
+                .insert(key, label.to_owned());
+        }
     }
 
     pub(super) fn toggle_collapsed_group(&mut self, endpoint_id: &ClientEndpointId, key: String) {

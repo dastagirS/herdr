@@ -12,6 +12,23 @@ fn collapsed_groups_for_endpoint<'a>(
     }
 }
 
+fn folder_label_for_endpoint(
+    state: &ShellRenderState<'_>,
+    endpoint_id: &ClientEndpointId,
+    key: &str,
+    workspace: &ClientShellWorkspace,
+) -> String {
+    let custom_label = if endpoint_id.is_local() {
+        state.folder_labels.get(key)
+    } else {
+        state
+            .remote_folder_labels
+            .get(endpoint_id)
+            .and_then(|labels| labels.get(key))
+    };
+    super::sidebar::workspace_folder_display_label(workspace, custom_label.map(String::as_str))
+}
+
 pub(super) fn render_collapsed(
     buffer: &mut Buffer,
     area: Rect,
@@ -143,12 +160,15 @@ pub(super) fn render_collapsed(
             };
             let rect = Rect::new(workspace_area.x, y, workspace_area.width, 1);
             if entry.folder {
+                let key = super::sidebar::workspace_folder_key(workspace);
+                let label =
+                    folder_label_for_endpoint(state, &endpoint.endpoint_id, &key, workspace);
                 put_text(
                     buffer,
                     rect.x,
                     rect.y,
                     rect.width,
-                    &format!("▾ {}", super::sidebar::workspace_folder_label(workspace)),
+                    &format!("▾ {label}"),
                     Style::default()
                         .fg(palette.overlay1)
                         .bg(palette.sidebar_bg)
@@ -507,17 +527,20 @@ pub(super) fn render_expanded(
                     rect.width.saturating_sub(2),
                     rect.height,
                 );
-                if let Some((toggle, key)) = super::sidebar::render_workspace_folder(
+                let label =
+                    folder_label_for_endpoint(state, &endpoint.endpoint_id, &key, workspace);
+                if let Some(key) = super::sidebar::render_workspace_folder(
                     buffer,
                     nested,
                     snapshot,
                     *entry,
+                    &label,
                     collapsed_groups.contains(&key),
                     focused,
                     palette,
                 ) {
                     hits.folder_toggles
-                        .push((toggle, endpoint.endpoint_id.clone(), key));
+                        .push((nested, endpoint.endpoint_id.clone(), key));
                 }
                 if endpoint.status != ClientEndpointStatus::Online {
                     buffer.set_style(
