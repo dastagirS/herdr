@@ -73,6 +73,24 @@ pub(super) fn snapshot_with_completions(
                     .and_then(|(tab_workspace_index, tab_index)| {
                         (tab_workspace_index == workspace_index).then_some(tab_index)
                     });
+            let worktree = workspace
+                .worktree
+                .map(|worktree| protocol::ClientShellWorktree {
+                    key: worktree.repo_key,
+                    label: worktree.repo_name,
+                    is_linked_worktree: worktree.is_linked_worktree,
+                })
+                // The active tab CWD changes when an agent tab is selected; the cached
+                // Git identity keeps client-side folder grouping stable across tab switches.
+                .or_else(|| {
+                    state
+                        .git_space()
+                        .map(|space| protocol::ClientShellWorktree {
+                            key: space.key.clone(),
+                            label: space.repo_name.clone(),
+                            is_linked_worktree: space.is_linked_worktree,
+                        })
+                });
             protocol::ClientShellWorkspace {
                 focused: focused_workspace_id.as_deref() == Some(workspace_id.as_str()),
                 workspace_id,
@@ -87,13 +105,7 @@ pub(super) fn snapshot_with_completions(
                 branch: state.branch(),
                 git_ahead_behind: state.git_ahead_behind(),
                 tokens,
-                worktree: workspace
-                    .worktree
-                    .map(|worktree| protocol::ClientShellWorktree {
-                        key: worktree.repo_key,
-                        label: worktree.repo_name,
-                        is_linked_worktree: worktree.is_linked_worktree,
-                    }),
+                worktree,
                 agent_status: workspace.agent_status,
             }
         })
@@ -715,6 +727,39 @@ mod tests {
             .terminal_runtimes
             .values()
             .all(|runtime| runtime.test_scroll_metrics_reads() == 1));
+    }
+
+    #[test]
+    fn client_shell_workspace_uses_cached_git_space_for_stable_folder_grouping() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = crate::app::App::new(
+            &crate::config::Config::default(),
+            crate::app::AppPolicy::TEST,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        let mut workspace = crate::workspace::Workspace::test_new("repo");
+        workspace.cached_git_space = Some(crate::workspace::GitSpaceMetadata {
+            key: "repo-key".into(),
+            checkout_key: "/repo".into(),
+            repo_name: "repo".into(),
+            repo_root: "/repo".into(),
+            is_linked_worktree: false,
+        });
+        app.state.workspaces = vec![workspace];
+        app.state.active = Some(0);
+        app.state.selected = 0;
+
+        let shell = snapshot(&app, "boot", 1, None, None);
+        let worktree = shell
+            .workspaces
+            .first()
+            .and_then(|workspace| workspace.worktree.as_ref())
+            .expect("cached Git identity should be projected to the client shell");
+        assert_eq!(worktree.key, "repo-key");
+        assert_eq!(worktree.label, "repo");
+        assert!(!worktree.is_linked_worktree);
     }
 
     #[test]
