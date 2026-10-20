@@ -177,6 +177,54 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
 }
 
 #[test]
+fn folder_fallback_stays_with_parent_when_child_order_changes() {
+    let mut projected = snapshot();
+    let mut parent = projected.workspaces[0].clone();
+    parent.workspace_id = "ws_parent".into();
+    parent.label = "parent-fallback".into();
+    parent.branch = Some("main".into());
+    parent.worktree = Some(ClientShellWorktree {
+        key: "repo".into(),
+        label: "parent-repo".into(),
+        is_linked_worktree: false,
+    });
+    let mut child = parent.clone();
+    child.workspace_id = "ws_child".into();
+    child.label = "child-fallback".into();
+    child.branch = Some("worktree/child".into());
+    child.worktree = Some(ClientShellWorktree {
+        key: "repo".into(),
+        label: "child-repo".into(),
+        is_linked_worktree: true,
+    });
+    projected.workspaces = vec![parent.clone(), child.clone()];
+
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected.clone()));
+    state.set_pane_surface(surface());
+    let frame = state.compose(106, 24).expect("parent-first folder");
+    let folder_row = frame_rows(&frame)
+        .into_iter()
+        .find(|row| row.trim_start().starts_with('▾'))
+        .expect("parent folder row");
+    assert!(folder_row.contains("parent-repo"), "row: {folder_row}");
+
+    child.worktree.as_mut().expect("child worktree").label = "changed-child-repo".into();
+    projected.workspaces = vec![child, parent];
+    state.set_snapshot(Box::new(projected));
+    let frame = state.compose(106, 24).expect("child-first folder");
+    let folder_row = frame_rows(&frame)
+        .into_iter()
+        .find(|row| row.trim_start().starts_with('▾'))
+        .expect("stable parent folder row");
+    assert!(folder_row.contains("parent-repo"), "row: {folder_row}");
+    assert!(
+        !folder_row.contains("changed-child-repo"),
+        "row: {folder_row}"
+    );
+}
+
+#[test]
 fn folder_rows_deduplicate_duplicate_worktree_parents_and_collapse_children() {
     let mut projected = snapshot();
     projected.workspaces[0].worktree = Some(ClientShellWorktree {

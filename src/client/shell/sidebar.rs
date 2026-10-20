@@ -580,8 +580,21 @@ pub(crate) fn workspace_entries(
         let Some(&first) = members.first() else {
             continue;
         };
+        // Keep the folder label anchored to the repository parent; child order and
+        // fallback labels can change independently as worktrees are discovered.
+        let folder_index = members
+            .iter()
+            .copied()
+            .find(|member_index| {
+                snapshot
+                    .workspaces
+                    .get(*member_index)
+                    .and_then(|workspace| workspace.worktree.as_ref())
+                    .is_some_and(|worktree| !worktree.is_linked_worktree)
+            })
+            .unwrap_or(first);
         entries.push(WorkspaceEntry {
-            index: first,
+            index: folder_index,
             indented: false,
             last_child: false,
             folder: true,
