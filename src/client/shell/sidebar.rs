@@ -346,10 +346,6 @@ pub(crate) fn render_sidebar(
         let folder_rect = Rect::new(body.x, y, content_width, 1);
         if entry.folder {
             let key = workspace_folder_key(workspace);
-            let focused = snapshot
-                .workspaces
-                .iter()
-                .any(|candidate| workspace_folder_key(candidate) == key && candidate.focused);
             let label = workspace_folder_display_label(
                 workspace,
                 state.folder_labels.get(&key).map(String::as_str),
@@ -361,7 +357,6 @@ pub(crate) fn render_sidebar(
                 *entry,
                 &label,
                 state.collapsed_groups.contains(&key),
-                focused,
                 palette,
             ) {
                 hits.folder_toggles
@@ -621,23 +616,14 @@ pub(crate) fn render_workspace_folder(
     entry: WorkspaceEntry,
     label: &str,
     collapsed: bool,
-    focused: bool,
     palette: &Palette,
 ) -> Option<String> {
     let workspace = snapshot.workspaces.get(entry.index)?;
     let key = workspace_folder_key(workspace);
     let marker = if collapsed { "▸" } else { "▾" };
     let style = Style::default()
-        .fg(if focused {
-            palette.text
-        } else {
-            palette.overlay1
-        })
-        .bg(if focused {
-            palette.active_row_bg
-        } else {
-            palette.sidebar_bg
-        })
+        .fg(palette.overlay1)
+        .bg(palette.sidebar_bg)
         .add_modifier(Modifier::BOLD);
     buffer.set_style(rect, style);
     put_text(

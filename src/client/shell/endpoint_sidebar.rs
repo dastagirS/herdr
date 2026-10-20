@@ -517,9 +517,6 @@ pub(super) fn render_expanded(
                 let collapsed_groups = collapsed_groups_for_endpoint(state, &endpoint.endpoint_id)
                     .unwrap_or(&empty_collapsed_groups);
                 let key = super::sidebar::workspace_folder_key(workspace);
-                let focused = snapshot.workspaces.iter().any(|candidate| {
-                    super::sidebar::workspace_folder_key(candidate) == key && candidate.focused
-                });
                 let rect = Rect::new(body.x, y, content_width, 1);
                 let nested = Rect::new(
                     rect.x.saturating_add(2),
@@ -536,7 +533,6 @@ pub(super) fn render_expanded(
                     *entry,
                     &label,
                     collapsed_groups.contains(&key),
-                    focused,
                     palette,
                 ) {
                     hits.folder_toggles

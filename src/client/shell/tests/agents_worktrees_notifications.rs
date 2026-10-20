@@ -159,6 +159,10 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
         .to_ratatui_buffer()
         .expect("frame should reconstruct");
     assert_eq!(buffer[(folder_toggle.x, folder_toggle.y)].symbol(), "▸");
+    assert_ne!(
+        buffer[(folder_toggle.x, folder_toggle.y)].bg,
+        state.config.palette.active_row_bg
+    );
 
     let mut next = ClientShellInput::default();
     state.record_binding(
