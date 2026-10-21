@@ -1,6 +1,35 @@
 use super::*;
 
 #[test]
+fn namespace_grouping_ignores_workspace_cwd() {
+    let mut projected = snapshot();
+    projected.workspaces[0].namespace_id = Some("namespace:shared".into());
+    projected.workspaces[0].namespace_label = Some("shared".into());
+    let mut child = projected.workspaces[0].clone();
+    child.workspace_id = "ws_2".into();
+    child.active_tab_id = "tab_ws2".into();
+    child.new_workspace_cwd = "/tmp/unrelated".into();
+    child.number = 2;
+    child.label = "elsewhere".into();
+    child.focused = false;
+    projected.workspaces.push(child);
+
+    let entries = super::sidebar::workspace_entries(&projected, &std::collections::HashSet::new());
+    assert_eq!(entries.len(), 3);
+    assert!(entries[0].folder && !entries[0].indented);
+    assert_eq!(entries[1].index, 0);
+    assert_eq!(entries[2].index, 1);
+    assert_eq!(
+        super::sidebar::workspace_folder_key(&projected.workspaces[1]),
+        "namespace:namespace:shared"
+    );
+    assert_eq!(
+        super::sidebar::workspace_folder_label(&projected.workspaces[1]),
+        "shared"
+    );
+}
+
+#[test]
 fn mouse_hits_use_stable_workspace_tab_and_pane_ids() {
     let config = ClientShellConfig::from_config(&Config::default());
     let mut state = ClientShellState::new(config);
@@ -102,6 +131,8 @@ fn grouped_worktrees_render_parent_branch_and_indented_child() {
     });
     snapshot.workspaces.push(ClientShellWorkspace {
         workspace_id: "ws_2".into(),
+        namespace_id: None,
+        namespace_label: None,
         active_tab_id: "tab_ws2".into(),
         new_workspace_cwd: "/repo/feature".into(),
         number: 2,

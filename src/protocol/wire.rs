@@ -1017,9 +1017,14 @@ pub struct ClientShellTabStatusSegment {
     pub accent: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientShellWorkspace {
     pub workspace_id: String,
+    /// Namespace metadata is present in the JSON endpoint projection. The
+    /// private binary codec still uses the legacy field sequence so its frozen
+    /// generation-one wire contract remains unchanged.
+    pub namespace_id: Option<String>,
+    pub namespace_label: Option<String>,
     pub active_tab_id: String,
     pub new_workspace_cwd: String,
     pub number: usize,
@@ -1030,8 +1035,133 @@ pub struct ClientShellWorkspace {
     pub tokens: Vec<(String, String)>,
     pub worktree: Option<ClientShellWorktree>,
     pub focused: bool,
-    #[serde(deserialize_with = "deserialize_client_shell_agent_status")]
     pub agent_status: crate::api::schema::AgentStatus,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ClientShellWorkspaceWire {
+    workspace_id: String,
+    active_tab_id: String,
+    new_workspace_cwd: String,
+    number: usize,
+    label: String,
+    custom_label: bool,
+    branch: Option<String>,
+    git_ahead_behind: Option<(usize, usize)>,
+    tokens: Vec<(String, String)>,
+    worktree: Option<ClientShellWorktree>,
+    focused: bool,
+    #[serde(deserialize_with = "deserialize_client_shell_agent_status")]
+    agent_status: crate::api::schema::AgentStatus,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ClientShellWorkspaceJson {
+    workspace_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    namespace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    namespace_label: Option<String>,
+    active_tab_id: String,
+    new_workspace_cwd: String,
+    number: usize,
+    label: String,
+    custom_label: bool,
+    branch: Option<String>,
+    git_ahead_behind: Option<(usize, usize)>,
+    tokens: Vec<(String, String)>,
+    worktree: Option<ClientShellWorktree>,
+    focused: bool,
+    #[serde(deserialize_with = "deserialize_client_shell_agent_status")]
+    agent_status: crate::api::schema::AgentStatus,
+}
+
+impl Serialize for ClientShellWorkspace {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if serializer.is_human_readable() {
+            ClientShellWorkspaceJson {
+                workspace_id: self.workspace_id.clone(),
+                namespace_id: self.namespace_id.clone(),
+                namespace_label: self.namespace_label.clone(),
+                active_tab_id: self.active_tab_id.clone(),
+                new_workspace_cwd: self.new_workspace_cwd.clone(),
+                number: self.number,
+                label: self.label.clone(),
+                custom_label: self.custom_label,
+                branch: self.branch.clone(),
+                git_ahead_behind: self.git_ahead_behind,
+                tokens: self.tokens.clone(),
+                worktree: self.worktree.clone(),
+                focused: self.focused,
+                agent_status: self.agent_status,
+            }
+            .serialize(serializer)
+        } else {
+            ClientShellWorkspaceWire {
+                workspace_id: self.workspace_id.clone(),
+                active_tab_id: self.active_tab_id.clone(),
+                new_workspace_cwd: self.new_workspace_cwd.clone(),
+                number: self.number,
+                label: self.label.clone(),
+                custom_label: self.custom_label,
+                branch: self.branch.clone(),
+                git_ahead_behind: self.git_ahead_behind,
+                tokens: self.tokens.clone(),
+                worktree: self.worktree.clone(),
+                focused: self.focused,
+                agent_status: self.agent_status,
+            }
+            .serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ClientShellWorkspace {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let workspace = ClientShellWorkspaceJson::deserialize(deserializer)?;
+            Ok(Self {
+                workspace_id: workspace.workspace_id,
+                namespace_id: workspace.namespace_id,
+                namespace_label: workspace.namespace_label,
+                active_tab_id: workspace.active_tab_id,
+                new_workspace_cwd: workspace.new_workspace_cwd,
+                number: workspace.number,
+                label: workspace.label,
+                custom_label: workspace.custom_label,
+                branch: workspace.branch,
+                git_ahead_behind: workspace.git_ahead_behind,
+                tokens: workspace.tokens,
+                worktree: workspace.worktree,
+                focused: workspace.focused,
+                agent_status: workspace.agent_status,
+            })
+        } else {
+            let workspace = ClientShellWorkspaceWire::deserialize(deserializer)?;
+            Ok(Self {
+                workspace_id: workspace.workspace_id,
+                namespace_id: None,
+                namespace_label: None,
+                active_tab_id: workspace.active_tab_id,
+                new_workspace_cwd: workspace.new_workspace_cwd,
+                number: workspace.number,
+                label: workspace.label,
+                custom_label: workspace.custom_label,
+                branch: workspace.branch,
+                git_ahead_behind: workspace.git_ahead_behind,
+                tokens: workspace.tokens,
+                worktree: workspace.worktree,
+                focused: workspace.focused,
+                agent_status: workspace.agent_status,
+            })
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2819,6 +2949,8 @@ mod tests {
             agent_order: Vec::new(),
             workspaces: vec![ClientShellWorkspace {
                 workspace_id: "w1".into(),
+                namespace_id: None,
+                namespace_label: None,
                 active_tab_id: "w1:t1".into(),
                 new_workspace_cwd: "/tmp".into(),
                 number: 1,
@@ -2864,6 +2996,40 @@ mod tests {
         let (decoded, _): (ServerMessage, _) =
             bincode::serde::decode_from_slice(&encoded, bincode::config::standard()).unwrap();
         assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn client_shell_workspace_json_carries_namespace_without_binary_fields() {
+        let workspace = ClientShellWorkspace {
+            workspace_id: "w1".into(),
+            namespace_id: Some("namespace:shared".into()),
+            namespace_label: Some("shared".into()),
+            active_tab_id: "w1:t1".into(),
+            new_workspace_cwd: "/tmp".into(),
+            number: 1,
+            label: "shell".into(),
+            custom_label: false,
+            branch: Some("main".into()),
+            git_ahead_behind: None,
+            tokens: Vec::new(),
+            worktree: None,
+            focused: true,
+            agent_status: crate::api::schema::AgentStatus::Idle,
+        };
+        let json = serde_json::to_value(&workspace).unwrap();
+        assert_eq!(json["namespace_id"], "namespace:shared");
+        assert_eq!(json["namespace_label"], "shared");
+        let decoded: ClientShellWorkspace = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, workspace);
+
+        let mut legacy = workspace.clone();
+        legacy.namespace_id = None;
+        legacy.namespace_label = None;
+        let encoded =
+            bincode::serde::encode_to_vec(&workspace, bincode::config::standard()).unwrap();
+        let legacy_encoded =
+            bincode::serde::encode_to_vec(&legacy, bincode::config::standard()).unwrap();
+        assert_eq!(encoded, legacy_encoded);
     }
 
     #[test]

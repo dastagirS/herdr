@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use crate::api::schema::{
     EventData, EventEnvelope, EventKind, ResponseResult, WorkspaceCloseParams,
-    WorkspaceCreateParams, WorkspaceMoveBlockParams, WorkspaceMoveParams, WorkspaceRenameParams,
+    WorkspaceCreateInNamespaceParams, WorkspaceCreateParams, WorkspaceMoveBlockParams,
+    WorkspaceMoveParams, WorkspaceNamespaceMoveParams, WorkspaceRenameParams,
     WorkspaceReportMetadataParams, WorkspaceTarget,
 };
 use crate::app::App;
@@ -41,6 +42,40 @@ impl App {
         id: String,
         params: WorkspaceCreateParams,
     ) -> String {
+        self.handle_workspace_create_with_namespace(id, params, None)
+    }
+
+    pub(super) fn handle_workspace_create_in_namespace(
+        &mut self,
+        id: String,
+        params: WorkspaceCreateInNamespaceParams,
+    ) -> String {
+        let namespace_id = params.namespace_id.clone();
+        let create_params = WorkspaceCreateParams {
+            source_workspace_id: params.source_workspace_id,
+            cwd: params.cwd,
+            focus: params.focus,
+            label: params.label,
+            env: params.env,
+        };
+        self.handle_workspace_create_with_namespace(id, create_params, Some(namespace_id))
+    }
+
+    fn handle_workspace_create_with_namespace(
+        &mut self,
+        id: String,
+        params: WorkspaceCreateParams,
+        requested_namespace_id: Option<String>,
+    ) -> String {
+        if let Some(namespace_id) = requested_namespace_id.as_deref() {
+            if namespace_id.is_empty() || !self.state.namespaces.contains_key(namespace_id) {
+                return encode_error(
+                    id,
+                    "workspace_namespace_not_found",
+                    format!("namespace {namespace_id} not found"),
+                );
+            }
+        }
         let source_workspace_index = if params.cwd.is_some() {
             None
         } else {
@@ -73,6 +108,17 @@ impl App {
                         crate::logging::workspace_renamed(&workspace.id);
                     }
                 }
+                let namespace_label = self.state.workspaces[index]
+                    .display_name_from(&self.state.terminals, &self.terminal_runtimes);
+                if let Err(message) = self.state.assign_new_workspace_namespace(
+                    index,
+                    requested_namespace_id,
+                    namespace_label,
+                ) {
+                    return encode_error(id, "workspace_namespace_create_failed", message);
+                }
+                self.state.mark_session_dirty();
+                self.schedule_session_save();
                 self.emit_workspace_open_events(index);
                 encode_success(
                     id,
@@ -238,6 +284,43 @@ impl App {
         encode_success(id, ResponseResult::WorkspaceList { workspaces })
     }
 
+    pub(super) fn handle_workspace_namespace_move(
+        &mut self,
+        id: String,
+        params: WorkspaceNamespaceMoveParams,
+    ) -> String {
+        let Some(index) = self.parse_workspace_id(&params.workspace_id) else {
+            return workspace_not_found(id, &params.workspace_id);
+        };
+        if params.namespace_id.is_empty() {
+            return encode_error(id, "invalid_namespace_id", "namespace_id must not be empty");
+        }
+        match self
+            .state
+            .move_workspace_to_namespace(index, &params.namespace_id)
+        {
+            Ok(changed) => {
+                if changed {
+                    self.state.mark_session_dirty();
+                    self.schedule_session_save();
+                    self.emit_event(EventEnvelope {
+                        event: EventKind::WorkspaceUpdated,
+                        data: EventData::WorkspaceUpdated {
+                            workspace: self.workspace_info(index),
+                        },
+                    });
+                }
+                encode_success(
+                    id,
+                    ResponseResult::WorkspaceInfo {
+                        workspace: self.workspace_info(index),
+                    },
+                )
+            }
+            Err(message) => encode_error(id, "workspace_namespace_move_failed", message),
+        }
+    }
+
     pub(super) fn handle_workspace_report_metadata(
         &mut self,
         id: String,
@@ -385,6 +468,112 @@ mod tests {
         config::Config,
         workspace::Workspace,
     };
+
+    #[tokio::test]
+    async fn namespace_create_keeps_membership_after_arbitrary_cwd_and_close() {
+        use super::super::test_support::{exiting_test_command, shutdown_test_runtimes};
+        use crate::config::ShellModeConfig;
+
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &Config::default(),
+            crate::app::AppPolicy::TEST,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.state.default_shell = exiting_test_command().into();
+        app.state.shell_mode = ShellModeConfig::NonLogin;
+        app.state.workspaces = vec![Workspace::test_new("root")];
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        app.state.ensure_test_terminals();
+        let source_workspace_id = app.public_workspace_id(0);
+        let namespace_id = app.state.ensure_workspace_namespace(0).unwrap();
+        let arbitrary_cwd =
+            std::env::temp_dir().join(format!("herdr-namespace-create-{}", std::process::id()));
+        std::fs::create_dir_all(&arbitrary_cwd).unwrap();
+
+        let response = app.handle_workspace_create_in_namespace(
+            "req".into(),
+            WorkspaceCreateInNamespaceParams {
+                source_workspace_id: Some(source_workspace_id),
+                namespace_id: namespace_id.clone(),
+                cwd: Some(arbitrary_cwd.display().to_string()),
+                focus: false,
+                label: Some("unrelated path".into()),
+                env: Default::default(),
+            },
+        );
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        assert!(matches!(
+            success.result,
+            ResponseResult::WorkspaceCreated { .. }
+        ));
+        assert_eq!(app.state.workspaces.len(), 2);
+        let child_workspace_id = app.state.workspaces[1].id.clone();
+        assert_eq!(
+            app.state.workspace_namespace_id(1),
+            Some(namespace_id.clone())
+        );
+        assert_eq!(
+            crate::worktree::canonical_or_original(&app.state.workspaces[1].identity_cwd),
+            crate::worktree::canonical_or_original(&arbitrary_cwd)
+        );
+
+        app.state.workspaces[1].identity_cwd = std::path::PathBuf::from("/tmp/changed");
+        assert_eq!(
+            app.state.workspace_namespace_id(1),
+            Some(namespace_id.clone())
+        );
+        app.state.close_workspaces(vec![0]);
+        assert_eq!(app.state.workspaces[0].id, child_workspace_id);
+        assert_eq!(app.state.workspace_namespace_id(0), Some(namespace_id));
+
+        shutdown_test_runtimes(&mut app);
+        let _ = std::fs::remove_dir_all(arbitrary_cwd);
+    }
+
+    #[tokio::test]
+    async fn namespace_move_changes_only_explicit_membership() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &Config::default(),
+            crate::app::AppPolicy::TEST,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.state.workspaces = vec![Workspace::test_new("first"), Workspace::test_new("second")];
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        app.state.ensure_test_terminals();
+        let source_namespace_id = app.state.ensure_workspace_namespace(0).unwrap();
+        let target_namespace_id = app.state.ensure_workspace_namespace(1).unwrap();
+        let workspace_id = app.public_workspace_id(0);
+
+        let response = app.handle_workspace_namespace_move(
+            "move".into(),
+            WorkspaceNamespaceMoveParams {
+                workspace_id,
+                namespace_id: target_namespace_id.clone(),
+            },
+        );
+        let success: SuccessResponse = serde_json::from_str(&response).unwrap();
+        let ResponseResult::WorkspaceInfo { workspace } = success.result else {
+            panic!("namespace move should return workspace info");
+        };
+        assert_eq!(workspace.namespace_id, Some(target_namespace_id.clone()));
+        assert_eq!(
+            app.state.workspace_namespace_id(0),
+            Some(target_namespace_id.clone())
+        );
+        assert!(!app.state.namespaces.contains_key(&source_namespace_id));
+        assert_eq!(
+            app.state.workspace_namespace_id(1),
+            Some(target_namespace_id)
+        );
+    }
 
     // `new_cwd = follow` must anchor on the focused pane for every creation
     // surface. Splits and tabs already do; a new workspace must follow the

@@ -1088,6 +1088,18 @@
             "label": {
               "type": "string"
             },
+            "namespace_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "namespace_label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "number": {
               "format": "uint",
               "minimum": 0,
@@ -4380,6 +4392,46 @@
           ],
           "type": "object"
         },
+        "WorkspaceCreateInNamespaceParams": {
+          "description": "Namespace-aware creation is a separate method so older servers cannot\nsilently ignore the membership request and create an unrelated workspace.",
+          "properties": {
+            "cwd": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "focus": {
+              "default": false,
+              "type": "boolean"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "namespace_id": {
+              "type": "string"
+            },
+            "source_workspace_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "namespace_id"
+          ],
+          "type": "object"
+        },
         "WorkspaceCreateParams": {
           "properties": {
             "cwd": {
@@ -4448,6 +4500,21 @@
           "required": [
             "workspace_id",
             "insert_index"
+          ],
+          "type": "object"
+        },
+        "WorkspaceNamespaceMoveParams": {
+          "properties": {
+            "namespace_id": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspace_id",
+            "namespace_id"
           ],
           "type": "object"
         },
@@ -6305,6 +6372,38 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/PluginPaneCloseParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.namespace_move",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/WorkspaceNamespaceMoveParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "workspace.create_in_namespace",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/WorkspaceCreateInNamespaceParams"
             }
           },
           "required": [
@@ -10586,6 +10685,18 @@
             },
             "label": {
               "type": "string"
+            },
+            "namespace_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "namespace_label": {
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "number": {
               "format": "uint",

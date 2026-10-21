@@ -2,7 +2,7 @@ use std::{
     collections::{HashSet, VecDeque},
     io::{Read, Write},
     os::fd::RawFd,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::OnceLock,
 };
@@ -773,6 +773,14 @@ fn process_argv(pid: u32) -> Option<Vec<String>> {
         .map(|part| String::from_utf8_lossy(part).into_owned())
         .collect();
     (!parts.is_empty()).then_some(parts)
+}
+
+/// `/proc/<pid>/cwd` appends this marker when a process remains in a
+/// directory whose name was unlinked. Such a path is never a valid launch cwd.
+pub(crate) fn is_deleted_process_cwd(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+
+    path.as_os_str().as_bytes().ends_with(b" (deleted)")
 }
 
 /// Get the current working directory of a process.

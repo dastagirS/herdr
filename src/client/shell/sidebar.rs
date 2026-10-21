@@ -515,6 +515,13 @@ pub(crate) fn render_sidebar(
 // Folder rows are a client projection so existing workspace/tab/pane identities and
 // older endpoint snapshots remain compatible while the shell gains a tree level.
 pub(crate) fn workspace_folder_key(workspace: &ClientShellWorkspace) -> String {
+    if let Some(namespace_id) = workspace
+        .namespace_id
+        .as_deref()
+        .filter(|namespace_id| !namespace_id.is_empty())
+    {
+        return format!("namespace:{namespace_id}");
+    }
     workspace
         .worktree
         .as_ref()
@@ -530,6 +537,13 @@ pub(crate) fn workspace_folder_key(workspace: &ClientShellWorkspace) -> String {
 }
 
 pub(crate) fn workspace_folder_label(workspace: &ClientShellWorkspace) -> String {
+    if let Some(namespace_label) = workspace
+        .namespace_label
+        .as_deref()
+        .filter(|label| !label.is_empty())
+    {
+        return namespace_label.to_owned();
+    }
     if let Some(worktree) = &workspace.worktree {
         if !worktree.label.is_empty() {
             return worktree.label.clone();

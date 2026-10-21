@@ -29,6 +29,8 @@ pub(super) fn snapshot() -> ClientShellSnapshot {
         agent_order: Vec::new(),
         workspaces: vec![ClientShellWorkspace {
             workspace_id: "ws_1".into(),
+            namespace_id: None,
+            namespace_label: None,
             active_tab_id: "tab_1".into(),
             new_workspace_cwd: "/repo".into(),
             number: 1,

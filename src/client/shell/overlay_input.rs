@@ -1,5 +1,35 @@
 use super::*;
 
+pub(super) fn workspace_create_method(
+    source_workspace_id: Option<String>,
+    namespace_id: Option<String>,
+    cwd: Option<String>,
+    focus: bool,
+    label: Option<String>,
+) -> crate::api::schema::Method {
+    match namespace_id {
+        Some(namespace_id) => crate::api::schema::Method::WorkspaceCreateInNamespace(
+            crate::api::schema::WorkspaceCreateInNamespaceParams {
+                source_workspace_id,
+                namespace_id,
+                cwd,
+                focus,
+                label,
+                env: Default::default(),
+            },
+        ),
+        None => {
+            crate::api::schema::Method::WorkspaceCreate(crate::api::schema::WorkspaceCreateParams {
+                source_workspace_id,
+                cwd,
+                focus,
+                label,
+                env: Default::default(),
+            })
+        }
+    }
+}
+
 impl ClientShellState {
     pub(super) fn dismiss_product_announcement(&mut self, outcome: &mut ClientShellInput) {
         let announcement = match self.overlay.take() {
@@ -330,8 +360,19 @@ impl ClientShellState {
             })
     }
 
+    pub(super) fn workspace_action_namespace_id(&self) -> Option<String> {
+        let workspace_id = self.workspace_action_id()?;
+        self.snapshot
+            .as_deref()?
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.workspace_id == workspace_id)
+            .and_then(|workspace| workspace.namespace_id.clone())
+    }
+
     pub(super) fn open_new_workspace_overlay(&mut self) {
         let source_workspace_id = self.workspace_action_id();
+        let namespace_id = self.workspace_action_namespace_id();
         let cwd = self.snapshot.as_deref().and_then(|snapshot| {
             let workspace_id = source_workspace_id.as_deref()?;
             snapshot
@@ -350,6 +391,7 @@ impl ClientShellState {
             input: TextEditor::new(&suggested_name, true),
             target: ClientRenameTarget::NewWorkspace {
                 source_workspace_id,
+                namespace_id,
                 cwd,
                 suggested_name,
             },
@@ -943,17 +985,15 @@ impl ClientShellState {
             }
             ClientRenameTarget::NewWorkspace {
                 source_workspace_id,
+                namespace_id,
                 cwd,
                 suggested_name,
-            } => Some(crate::api::schema::Method::WorkspaceCreate(
-                crate::api::schema::WorkspaceCreateParams {
-                    source_workspace_id,
-                    cwd,
-                    focus: true,
-                    label: (!trimmed.is_empty() && trimmed != suggested_name)
-                        .then(|| trimmed.to_owned()),
-                    env: Default::default(),
-                },
+            } => Some(workspace_create_method(
+                source_workspace_id,
+                namespace_id,
+                cwd,
+                true,
+                (!trimmed.is_empty() && trimmed != suggested_name).then(|| trimmed.to_owned()),
             )),
             ClientRenameTarget::Workspace { workspace_id } => (!trimmed.is_empty()).then(|| {
                 crate::api::schema::Method::WorkspaceRename(

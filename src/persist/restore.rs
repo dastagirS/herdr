@@ -361,6 +361,23 @@ fn restore_workspace(
         .unwrap_or(1)
         .max(snap.next_public_tab_number);
     let mut failed_imports = 0;
+    let workspace_fallback_cwd = crate::pane::is_usable_cwd(&snap.identity_cwd)
+        .then(|| snap.identity_cwd.clone())
+        .or_else(|| {
+            let cwd = std::env::current_dir().ok()?;
+            crate::pane::is_usable_cwd(&cwd).then_some(cwd)
+        })
+        .or_else(|| {
+            let cwd = std::path::PathBuf::from("/");
+            crate::pane::is_usable_cwd(&cwd).then_some(cwd)
+        });
+    let identity_cwd = if crate::platform::is_deleted_process_cwd(&snap.identity_cwd) {
+        workspace_fallback_cwd
+            .clone()
+            .unwrap_or_else(|| snap.identity_cwd.clone())
+    } else {
+        snap.identity_cwd.clone()
+    };
 
     for (idx, tab_snap) in snap.tabs.iter().enumerate() {
         let tab_number = snap.public_tab_numbers.get(idx).copied().unwrap_or(idx + 1);
@@ -375,6 +392,7 @@ fn restore_workspace(
             resumed_agent_sessions,
             imported_panes,
             &public_pane_ids_by_old_raw,
+            workspace_fallback_cwd.as_deref(),
         );
         failed_imports += tab_failed_imports;
         let Some((mut tab, restored_terminals, restored_runtimes, reverse_id_map)) = restored_tab
@@ -415,12 +433,12 @@ fn restore_workspace(
         Some(Workspace {
             id: workspace_id,
             custom_name: snap.custom_name.clone(),
-            identity_cwd: snap.identity_cwd.clone(),
-            cached_identity_cwd: snap.identity_cwd.clone(),
+            identity_cwd: identity_cwd.clone(),
+            cached_identity_cwd: identity_cwd.clone(),
             // Repository metadata is optional and may block on unavailable
             // storage. The app refreshes it after restoring the session.
-            cached_auto_label: crate::workspace::fallback_label_from_cwd(&snap.identity_cwd),
-            cached_git_status_key: snap.identity_cwd.clone(),
+            cached_auto_label: crate::workspace::fallback_label_from_cwd(&identity_cwd),
+            cached_git_status_key: identity_cwd.clone(),
             cached_git_branch: None,
             cached_git_ahead_behind: None,
             cached_git_space: None,
@@ -499,6 +517,7 @@ fn restore_tab(
     resumed_agent_sessions: &mut HashSet<String>,
     imported_panes: &mut HashMap<u32, crate::handoff_runtime::ImportedHandoffRuntime>,
     public_pane_ids_by_old_raw: &HashMap<u32, String>,
+    workspace_fallback_cwd: Option<&std::path::Path>,
 ) -> RestoreFailures<Option<RestoredTab>> {
     let (node, id_map) = restore_node_remapped(&snap.layout);
     let reverse_id_map: HashMap<PaneId, u32> = id_map
@@ -518,7 +537,13 @@ fn restore_tab(
             .map(|p| p.cwd.clone())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| "/".into()));
 
-        let cwd = saved_cwd;
+        let cwd = if crate::platform::is_deleted_process_cwd(&saved_cwd) {
+            workspace_fallback_cwd
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or(saved_cwd)
+        } else {
+            saved_cwd
+        };
         let has_import = old_id.is_some_and(|old_id| imported_panes.contains_key(old_id));
         if !has_import && !cwd.is_dir() {
             let terminal = unavailable_restored_terminal(
@@ -1522,6 +1547,43 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn restore_replaces_a_deleted_proc_cwd_with_the_workspace_cwd() {
+        let (mut snapshot, _) = snapshot_with_saved_pane_history();
+        let cwd = std::env::current_dir().unwrap();
+        snapshot.workspaces[0].identity_cwd = cwd.clone();
+        snapshot.workspaces[0].tabs[0]
+            .panes
+            .get_mut(&0)
+            .unwrap()
+            .cwd = PathBuf::from(format!("{} (deleted)", cwd.display()));
+
+        let (events, _rx) = mpsc::channel(32);
+        let (workspaces, terminals, runtimes) = restore(
+            &snapshot,
+            None,
+            24,
+            80,
+            0,
+            test_restore_shell(),
+            crate::config::ShellModeConfig::NonLogin,
+            false,
+            events,
+            Arc::new(Notify::new()),
+            Arc::new(RenderSignal::new()),
+        );
+        assert_eq!(workspaces.len(), 1);
+        assert_eq!(workspaces[0].identity_cwd, cwd);
+        let pane_id = workspaces[0].tabs[0].root_pane;
+        let terminal_id = workspaces[0].tabs[0].terminal_id(pane_id).unwrap();
+        assert_eq!(terminals[terminal_id].cwd, cwd);
+        assert!(runtimes.contains_key(terminal_id));
+        for (_, runtime) in runtimes {
+            runtime.shutdown();
+        }
+    }
+
     #[tokio::test]
     async fn restore_carries_persisted_agent_session_metadata() {
         let cwd = std::env::current_dir().unwrap();
@@ -1530,6 +1592,8 @@ mod tests {
             workspaces: vec![WorkspaceSnapshot {
                 id: Some("workspace".into()),
                 custom_name: None,
+                namespace_id: None,
+                namespace_label: None,
                 identity_cwd: cwd.clone(),
                 worktree_space: None,
                 public_pane_numbers: HashMap::new(),
@@ -1611,6 +1675,8 @@ mod tests {
             workspaces: vec![WorkspaceSnapshot {
                 id: Some("w1".into()),
                 custom_name: None,
+                namespace_id: None,
+                namespace_label: None,
                 identity_cwd: cwd.clone(),
                 worktree_space: None,
                 public_pane_numbers: HashMap::from([(10, 1), (20, 3)]),
@@ -1724,6 +1790,8 @@ mod tests {
             workspaces: vec![WorkspaceSnapshot {
                 id: Some("w1".into()),
                 custom_name: None,
+                namespace_id: None,
+                namespace_label: None,
                 identity_cwd: cwd.clone(),
                 worktree_space: None,
                 public_pane_numbers: HashMap::from([(10, 1), (11, 2), (12, 3), (13, 4)]),
@@ -1807,6 +1875,8 @@ mod tests {
         let snapshot = WorkspaceSnapshot {
             id: Some("w1".into()),
             custom_name: None,
+            namespace_id: None,
+            namespace_label: None,
             identity_cwd: cwd,
             worktree_space: None,
             public_pane_numbers: HashMap::new(),
@@ -1846,6 +1916,8 @@ mod tests {
             workspaces: vec![WorkspaceSnapshot {
                 id: Some("workspace".into()),
                 custom_name: None,
+                namespace_id: None,
+                namespace_label: None,
                 identity_cwd: cwd.clone(),
                 worktree_space: None,
                 public_pane_numbers: HashMap::new(),
@@ -2202,6 +2274,8 @@ mod tests {
             workspaces: vec![WorkspaceSnapshot {
                 id: Some("workspace".into()),
                 custom_name: None,
+                namespace_id: None,
+                namespace_label: None,
                 identity_cwd: cwd,
                 worktree_space: None,
                 public_pane_numbers: HashMap::new(),

@@ -579,6 +579,11 @@ pub use windows::*;
 #[cfg(not(windows))]
 pub(crate) use process_cwd as pane_process_cwd;
 
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn is_deleted_process_cwd(_path: &std::path::Path) -> bool {
+    false
+}
+
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 mod fallback;
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]

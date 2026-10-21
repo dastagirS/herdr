@@ -425,6 +425,10 @@ struct AgentDetectionPresence {
     consecutive_misses: u8,
 }
 
+pub(crate) fn is_usable_cwd(cwd: &Path) -> bool {
+    cwd.is_absolute() && cwd.is_dir()
+}
+
 #[cfg(unix)]
 fn absolute_process_cwd(pid: u32) -> Option<std::path::PathBuf> {
     crate::platform::process_cwd(pid).filter(|cwd| cwd.is_absolute())
@@ -432,7 +436,7 @@ fn absolute_process_cwd(pid: u32) -> Option<std::path::PathBuf> {
 
 #[cfg(unix)]
 fn usable_process_cwd(pid: u32) -> Option<std::path::PathBuf> {
-    absolute_process_cwd(pid).filter(|cwd| cwd.is_dir())
+    absolute_process_cwd(pid).filter(|cwd| is_usable_cwd(cwd))
 }
 
 #[cfg(unix)]
@@ -2189,7 +2193,7 @@ fn is_powershell_shell(shell: &str) -> bool {
 }
 
 fn usable_reported_cwd(cwd: std::path::PathBuf) -> Option<std::path::PathBuf> {
-    (cwd.is_absolute() && cwd.is_dir()).then_some(cwd)
+    is_usable_cwd(&cwd).then_some(cwd)
 }
 
 fn publish_terminal_bells(pane_id: PaneId, count: u16, events: &mpsc::Sender<AppEvent>) {
@@ -3824,7 +3828,7 @@ impl PaneRuntime {
         if let Some(cwd) = (!exited)
             .then(|| crate::platform::pane_process_cwd(pid))
             .flatten()
-            .filter(|cwd| cwd.is_absolute())
+            .filter(|cwd| is_usable_cwd(cwd))
         {
             // Persistence observations must not change OSC authority or follow-cwd behavior.
             if let Ok(mut known) = self.persistence_cwd.lock() {
@@ -3836,7 +3840,14 @@ impl PaneRuntime {
             .lock()
             .ok()
             .and_then(|cwd| cwd.clone())
-            .or_else(|| self.reported_cwd.lock().ok().and_then(|cwd| cwd.clone()))
+            .filter(|cwd| is_usable_cwd(cwd))
+            .or_else(|| {
+                self.reported_cwd
+                    .lock()
+                    .ok()
+                    .and_then(|cwd| cwd.clone())
+                    .filter(|cwd| is_usable_cwd(cwd))
+            })
     }
 
     pub fn child_pid(&self) -> Option<u32> {
@@ -5245,7 +5256,7 @@ mod tests {
     async fn ended_handoff_keeps_persistence_cwd_when_pid_is_reused() {
         let (runtime, _rx) = PaneRuntime::test_with_channel(80, 24);
         assert!(runtime.child_wait_completed.is_none());
-        let saved = std::env::temp_dir().join("saved-handoff-cwd");
+        let saved = std::env::current_dir().unwrap();
         *runtime.persistence_cwd.lock().unwrap() = Some(saved.clone());
         // A different live process now owns the imported shell's numeric PID.
         runtime
@@ -5255,6 +5266,39 @@ mod tests {
         assert_eq!(runtime.cwd_for_persistence(), Some(saved));
         *runtime.persistence_cwd.lock().unwrap() = None;
         assert_eq!(runtime.cwd_for_persistence(), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn deleted_process_cwd_keeps_the_last_usable_persistence_cwd() {
+        let base = std::env::temp_dir().join(format!(
+            "herdr-deleted-cwd-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let deleted = base.join("deleted");
+        let valid = base.join("valid");
+        std::fs::create_dir_all(&deleted).unwrap();
+        std::fs::create_dir_all(&valid).unwrap();
+
+        let (runtime, _rx) = PaneRuntime::test_with_channel(80, 24);
+        *runtime.persistence_cwd.lock().unwrap() = Some(valid.clone());
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .current_dir(&deleted)
+            .spawn()
+            .unwrap();
+        runtime.child_pid.store(child.id(), Ordering::Release);
+        std::fs::remove_dir_all(&deleted).unwrap();
+
+        let observed = crate::platform::process_cwd(child.id()).unwrap();
+        assert!(crate::platform::is_deleted_process_cwd(&observed));
+        assert!(!is_usable_cwd(&observed));
+        assert_eq!(runtime.cwd_for_persistence(), Some(valid.clone()));
+
+        child.kill().unwrap();
+        child.wait().unwrap();
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[cfg(unix)]

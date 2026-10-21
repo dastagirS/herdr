@@ -85,14 +85,12 @@ impl ClientShellState {
                         self.open_new_workspace_overlay();
                     } else {
                         self.push_endpoint_method(
-                            crate::api::schema::Method::WorkspaceCreate(
-                                crate::api::schema::WorkspaceCreateParams {
-                                    source_workspace_id: self.workspace_action_id(),
-                                    cwd: None,
-                                    focus: true,
-                                    label: None,
-                                    env: Default::default(),
-                                },
+                            super::overlay_input::workspace_create_method(
+                                self.workspace_action_id(),
+                                self.workspace_action_namespace_id(),
+                                None,
+                                true,
+                                None,
                             ),
                             outcome,
                         );
@@ -364,6 +362,7 @@ impl ClientShellState {
             | crate::api::schema::Method::PaneFocus(_)
             | crate::api::schema::Method::PaneFocusDirection(_) => true,
             crate::api::schema::Method::WorkspaceCreate(params) => params.focus,
+            crate::api::schema::Method::WorkspaceCreateInNamespace(params) => params.focus,
             crate::api::schema::Method::TabCreate(params) => params.focus,
             crate::api::schema::Method::PaneSplit(params) => params.focus,
             _ => false,

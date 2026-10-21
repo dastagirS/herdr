@@ -302,6 +302,7 @@ pub(super) enum ClientRenameTarget {
     },
     NewWorkspace {
         source_workspace_id: Option<String>,
+        namespace_id: Option<String>,
         cwd: Option<String>,
         suggested_name: String,
     },

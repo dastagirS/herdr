@@ -57,6 +57,15 @@ impl App {
                 .pending_worktree_remove_runtime_exits
                 .entry(pane_id)
                 .or_default() += 1;
+            if let Some(cwd) = self
+                .terminal_runtimes
+                .get(&terminal_id)
+                .and_then(|runtime| runtime.cwd_for_persistence())
+            {
+                if let Some(terminal) = self.state.terminals.get_mut(&terminal_id) {
+                    terminal.cwd = cwd;
+                }
+            }
             shutdown_panes.push(pane_id);
             self.shutdown_terminal_runtime(terminal_id);
         }

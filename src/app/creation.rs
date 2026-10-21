@@ -147,6 +147,11 @@ impl App {
         self.state.terminals.insert(terminal.id.clone(), terminal);
         self.state.workspaces.push(ws);
         let idx = self.state.workspaces.len() - 1;
+        let namespace_label = self.state.workspaces[idx]
+            .display_name_from(&self.state.terminals, &self.terminal_runtimes);
+        self.state
+            .assign_new_workspace_namespace(idx, None, namespace_label)
+            .expect("new workspace should receive a namespace");
         self.state
             .remove_alias_shadowed_by_new_pane(self.state.workspaces[idx].tabs[0].root_pane);
         let workspace_id = self.state.workspaces[idx].id.clone();
@@ -388,10 +393,11 @@ impl App {
     pub(super) fn workspace_info(&self, index: usize) -> crate::api::schema::WorkspaceInfo {
         let ws = &self.state.workspaces[index];
         let (agg_state, seen) = ws.aggregate_state(&self.state.terminals);
+        let label = ws.display_name_from(&self.state.terminals, &self.terminal_runtimes);
         crate::api::schema::WorkspaceInfo {
             workspace_id: self.public_workspace_id(index),
             number: index + 1,
-            label: ws.display_name_from(&self.state.terminals, &self.terminal_runtimes),
+            label: label.clone(),
             focused: self.state.active == Some(index),
             pane_count: ws.public_pane_numbers.len(),
             tab_count: ws.tabs.len(),
@@ -409,6 +415,8 @@ impl App {
                     checkout_path: space.checkout_path.display().to_string(),
                     is_linked_worktree: space.is_linked_worktree,
                 }),
+            namespace_id: self.state.workspace_namespace_id(index),
+            namespace_label: self.state.workspace_namespace_label(index, &label),
         }
     }
 }

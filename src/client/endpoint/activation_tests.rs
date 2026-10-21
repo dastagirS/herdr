@@ -142,6 +142,8 @@ fn workspace_focus_success(id: &str, workspace_id: &str) -> Vec<u8> {
                 number: 1,
                 label: workspace_id.into(),
                 focused: true,
+                namespace_id: None,
+                namespace_label: None,
                 pane_count: 1,
                 tab_count: 1,
                 active_tab_id: "tab".into(),

@@ -94,6 +94,10 @@ pub(super) fn snapshot_with_completions(
             protocol::ClientShellWorkspace {
                 focused: focused_workspace_id.as_deref() == Some(workspace_id.as_str()),
                 workspace_id,
+                namespace_id: app.state.workspace_namespace_id(workspace_index),
+                namespace_label: app
+                    .state
+                    .workspace_namespace_label(workspace_index, &workspace.label),
                 active_tab_id,
                 new_workspace_cwd: app
                     .resolved_new_workspace_cwd_from_tab(workspace_index, active_tab_index)
@@ -760,6 +764,12 @@ mod tests {
         assert_eq!(worktree.key, "repo-key");
         assert_eq!(worktree.label, "repo");
         assert!(!worktree.is_linked_worktree);
+        let projected_workspace = shell.workspaces.first().expect("workspace projection");
+        assert!(projected_workspace
+            .namespace_id
+            .as_deref()
+            .is_some_and(|id| id.starts_with("workspace:")));
+        assert_eq!(projected_workspace.namespace_label.as_deref(), Some("repo"));
     }
 
     #[test]

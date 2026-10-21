@@ -22,6 +22,15 @@ pub(crate) struct PopupPaneState {
     pub height: Option<crate::popup_size::PopupSize>,
 }
 
+/// Stable grouping identity for workspaces. Namespace membership is kept
+/// separately from CWD and Git metadata so changing either cannot regroup a
+/// workspace implicitly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkspaceNamespace {
+    pub id: String,
+    pub label: String,
+}
+
 use crate::terminal_theme::{HostAppearance, TerminalTheme};
 use crate::workspace::Workspace;
 
@@ -794,6 +803,10 @@ pub struct AppState {
     pub(crate) pane_id_aliases: std::collections::HashMap<u32, PaneId>,
     pub(crate) public_pane_id_aliases: std::collections::HashMap<String, PaneId>,
     pub workspaces: Vec<Workspace>,
+    /// First-class namespace records, keyed by stable namespace id.
+    pub(crate) namespaces: std::collections::HashMap<String, WorkspaceNamespace>,
+    /// Stable workspace-to-namespace membership, keyed by workspace id.
+    pub(crate) workspace_namespace_ids: std::collections::HashMap<String, String>,
     pub active: Option<usize>,
     pub(crate) previous_pane_focus: Option<PaneFocusTarget>,
     pub selected: usize,
@@ -891,6 +904,241 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Build namespace state while restoring a session. Missing fields are
+    /// migrated to one stable namespace per workspace rather than inferred
+    /// from paths, because old snapshots do not contain explicit membership.
+    pub(crate) fn namespace_state_for_workspaces(
+        workspaces: &[Workspace],
+        snapshot: Option<&crate::persist::SessionSnapshot>,
+    ) -> (
+        std::collections::HashMap<String, WorkspaceNamespace>,
+        std::collections::HashMap<String, String>,
+    ) {
+        let mut namespaces = std::collections::HashMap::new();
+        let mut workspace_namespace_ids = std::collections::HashMap::new();
+        let mut legacy_namespace_ids = std::collections::HashMap::<String, String>::new();
+        let mut matched_snapshot_indices = std::collections::HashSet::new();
+
+        for workspace in workspaces {
+            let persisted_index = snapshot.and_then(|session| {
+                session
+                    .workspaces
+                    .iter()
+                    .enumerate()
+                    .find(|(index, candidate)| {
+                        !matched_snapshot_indices.contains(index)
+                            && candidate.id.as_deref() == Some(workspace.id.as_str())
+                    })
+                    .map(|(index, _)| index)
+                    .or_else(|| {
+                        session
+                            .workspaces
+                            .iter()
+                            .enumerate()
+                            .filter(|(index, candidate)| {
+                                !matched_snapshot_indices.contains(index) && candidate.id.is_none()
+                            })
+                            .find(|(_, candidate)| {
+                                candidate.identity_cwd == workspace.identity_cwd
+                                    && candidate.worktree_space.as_ref().map(|space| &space.key)
+                                        == workspace.worktree_space.as_ref().map(|space| &space.key)
+                            })
+                            .map(|(index, _)| index)
+                    })
+            });
+            if let Some(index) = persisted_index {
+                matched_snapshot_indices.insert(index);
+            }
+            let persisted = persisted_index
+                .and_then(|index| snapshot.and_then(|session| session.workspaces.get(index)));
+            let namespace_id = persisted
+                .and_then(|candidate| candidate.namespace_id.clone())
+                .filter(|id| !id.is_empty())
+                .or_else(|| {
+                    // One-time migration only: preserve old path/worktree
+                    // groups, then use the generated namespace id forever.
+                    let candidate = persisted?;
+                    let key = candidate
+                        .worktree_space
+                        .as_ref()
+                        .map(|space| format!("worktree:{}", space.key))
+                        .unwrap_or_else(|| format!("cwd:{}", candidate.identity_cwd.display()));
+                    Some(
+                        legacy_namespace_ids
+                            .entry(key)
+                            .or_insert_with(|| Self::default_namespace_id(&workspace.id))
+                            .clone(),
+                    )
+                })
+                .unwrap_or_else(|| Self::default_namespace_id(&workspace.id));
+            let namespace_label = persisted
+                .and_then(|candidate| candidate.namespace_label.clone())
+                .filter(|label| !label.is_empty())
+                .unwrap_or_else(|| Self::default_namespace_label(workspace));
+            namespaces
+                .entry(namespace_id.clone())
+                .or_insert_with(|| WorkspaceNamespace {
+                    id: namespace_id.clone(),
+                    label: namespace_label,
+                });
+            workspace_namespace_ids.insert(workspace.id.clone(), namespace_id);
+        }
+
+        (namespaces, workspace_namespace_ids)
+    }
+
+    fn default_namespace_id(workspace_id: &str) -> String {
+        format!("workspace:{workspace_id}")
+    }
+
+    fn default_namespace_label(workspace: &Workspace) -> String {
+        workspace
+            .custom_name
+            .clone()
+            .unwrap_or_else(|| workspace.cached_auto_label.clone())
+    }
+
+    /// Return the workspace's stable namespace id without changing state.
+    /// The deterministic fallback keeps test-created and legacy workspaces
+    /// addressable until the next state mutation initializes their record.
+    pub(crate) fn workspace_namespace_id(&self, ws_idx: usize) -> Option<String> {
+        let workspace = self.workspaces.get(ws_idx)?;
+        Some(
+            self.workspace_namespace_ids
+                .get(&workspace.id)
+                .cloned()
+                .unwrap_or_else(|| Self::default_namespace_id(&workspace.id)),
+        )
+    }
+
+    pub(crate) fn workspace_namespace_label(
+        &self,
+        ws_idx: usize,
+        fallback: &str,
+    ) -> Option<String> {
+        let namespace_id = self.workspace_namespace_id(ws_idx)?;
+        Some(
+            self.namespaces
+                .get(&namespace_id)
+                .map(|namespace| namespace.label.clone())
+                .filter(|label| !label.is_empty())
+                .unwrap_or_else(|| fallback.to_owned()),
+        )
+    }
+
+    /// Ensure a workspace has an explicit namespace record before an API
+    /// operation uses it as a creation or move source.
+    pub(crate) fn ensure_workspace_namespace(&mut self, ws_idx: usize) -> Option<String> {
+        let workspace = self.workspaces.get(ws_idx)?;
+        let workspace_id = workspace.id.clone();
+        let default_label = Self::default_namespace_label(workspace);
+        let namespace_id = self
+            .workspace_namespace_ids
+            .get(&workspace_id)
+            .cloned()
+            .unwrap_or_else(|| Self::default_namespace_id(&workspace_id));
+        self.workspace_namespace_ids
+            .insert(workspace_id, namespace_id.clone());
+        self.namespaces
+            .entry(namespace_id.clone())
+            .or_insert_with(|| WorkspaceNamespace {
+                id: namespace_id.clone(),
+                label: default_label,
+            });
+        Some(namespace_id)
+    }
+
+    /// Assign a newly-created workspace either to an existing namespace or to
+    /// a new namespace of its own. The caller supplies the final workspace
+    /// label so a new namespace has a useful stable display label.
+    pub(crate) fn assign_new_workspace_namespace(
+        &mut self,
+        ws_idx: usize,
+        namespace_id: Option<String>,
+        label: String,
+    ) -> Result<(), String> {
+        let workspace_id = self
+            .workspaces
+            .get(ws_idx)
+            .map(|workspace| workspace.id.clone())
+            .ok_or_else(|| "workspace disappeared while assigning namespace".to_owned())?;
+        let namespace_id =
+            namespace_id.unwrap_or_else(|| Self::default_namespace_id(&workspace_id));
+        if let Some(namespace) = self.namespaces.get_mut(&namespace_id) {
+            if namespace.label.is_empty() {
+                namespace.label = label;
+            }
+        } else {
+            self.namespaces.insert(
+                namespace_id.clone(),
+                WorkspaceNamespace {
+                    id: namespace_id.clone(),
+                    label,
+                },
+            );
+        }
+        let old_namespace_id = self
+            .workspace_namespace_ids
+            .insert(workspace_id, namespace_id.clone());
+        if old_namespace_id.as_deref() != Some(namespace_id.as_str()) {
+            if let Some(old_namespace_id) = old_namespace_id {
+                self.remove_namespace_if_empty(&old_namespace_id);
+            }
+        }
+        Ok(())
+    }
+
+    /// Move one workspace to an existing namespace. Empty source namespaces
+    /// are removed, but closing or moving a workspace never reassigns its
+    /// siblings implicitly.
+    pub(crate) fn move_workspace_to_namespace(
+        &mut self,
+        ws_idx: usize,
+        namespace_id: &str,
+    ) -> Result<bool, String> {
+        if self.workspaces.get(ws_idx).is_none() {
+            return Err("workspace not found".to_owned());
+        }
+        if !self.namespaces.contains_key(namespace_id) {
+            return Err(format!("namespace {namespace_id} not found"));
+        }
+        let workspace_id = self.workspaces[ws_idx].id.clone();
+        let old_namespace_id = self.ensure_workspace_namespace(ws_idx);
+        if old_namespace_id.as_deref() == Some(namespace_id) {
+            return Ok(false);
+        }
+        self.workspace_namespace_ids
+            .insert(workspace_id, namespace_id.to_owned());
+        if let Some(old_namespace_id) = old_namespace_id {
+            self.remove_namespace_if_empty(&old_namespace_id);
+        }
+        Ok(true)
+    }
+
+    fn remove_namespace_if_empty(&mut self, namespace_id: &str) {
+        if !self
+            .workspace_namespace_ids
+            .values()
+            .any(|candidate| candidate == namespace_id)
+        {
+            self.namespaces.remove(namespace_id);
+        }
+    }
+
+    pub(crate) fn remove_workspace_namespace_memberships(&mut self, workspace_ids: &[String]) {
+        let mut old_namespace_ids = Vec::new();
+        for workspace_id in workspace_ids {
+            if let Some(namespace_id) = self.workspace_namespace_ids.remove(workspace_id) {
+                old_namespace_ids.push(namespace_id);
+            }
+        }
+        old_namespace_ids.sort_unstable();
+        old_namespace_ids.dedup();
+        for namespace_id in old_namespace_ids {
+            self.remove_namespace_if_empty(&namespace_id);
+        }
+    }
+
     pub(crate) fn mark_session_dirty(&mut self) {
         self.session_dirty = true;
     }
@@ -1040,6 +1288,8 @@ impl AppState {
             pane_id_aliases: std::collections::HashMap::new(),
             public_pane_id_aliases: std::collections::HashMap::new(),
             workspaces: Vec::new(),
+            namespaces: std::collections::HashMap::new(),
+            workspace_namespace_ids: std::collections::HashMap::new(),
             active: None,
             previous_pane_focus: None,
             selected: 0,
@@ -1182,6 +1432,14 @@ impl AppState {
                 self.pending_agent_notifications.is_empty(),
                 "empty app state must not keep pending agent notifications"
             );
+            assert!(
+                self.namespaces.is_empty(),
+                "empty app state must not keep namespace records"
+            );
+            assert!(
+                self.workspace_namespace_ids.is_empty(),
+                "empty app state must not keep workspace namespace memberships"
+            );
             if let Some(toast) = &self.toast {
                 assert!(
                     toast.target.is_none(),
@@ -1241,6 +1499,28 @@ impl AppState {
                     );
                 }
             }
+        }
+        for (workspace_id, namespace_id) in &self.workspace_namespace_ids {
+            assert!(
+                workspace_ids.contains(workspace_id),
+                "namespace membership references missing workspace {workspace_id}"
+            );
+            assert!(
+                self.namespaces.contains_key(namespace_id),
+                "workspace {workspace_id} references missing namespace {namespace_id}"
+            );
+        }
+        for (namespace_id, namespace) in &self.namespaces {
+            assert_eq!(
+                namespace.id, *namespace_id,
+                "namespace map key must match namespace record id"
+            );
+            assert!(
+                self.workspace_namespace_ids
+                    .values()
+                    .any(|candidate| candidate == namespace_id),
+                "namespace {namespace_id} must have a live workspace member"
+            );
         }
 
         let assert_live_pane = |pane_id: PaneId, context: &str| {
@@ -1324,6 +1604,41 @@ impl AppState {
 mod tests {
     use super::*;
     use crossterm::event::KeyEvent;
+
+    #[test]
+    fn namespace_membership_is_independent_of_cwd_and_close_order() {
+        let mut state = AppState::test_new();
+        state.workspaces = vec![
+            Workspace::test_new("root"),
+            Workspace::test_new("arbitrary-path"),
+        ];
+
+        let namespace_id = state.ensure_workspace_namespace(0).unwrap();
+        state
+            .assign_new_workspace_namespace(
+                1,
+                Some(namespace_id.clone()),
+                "unused for existing namespace".into(),
+            )
+            .unwrap();
+        let second_workspace_id = state.workspaces[1].id.clone();
+        state.workspaces[1].identity_cwd = std::path::PathBuf::from("/tmp/unrelated");
+
+        assert_eq!(state.workspace_namespace_id(0), Some(namespace_id.clone()));
+        assert_eq!(state.workspace_namespace_id(1), Some(namespace_id.clone()));
+        assert_eq!(
+            state.workspace_namespace_ids.get(&second_workspace_id),
+            Some(&namespace_id)
+        );
+
+        let first_workspace_id = state.workspaces[0].id.clone();
+        state.remove_workspace_namespace_memberships(&[first_workspace_id]);
+        assert_eq!(
+            state.workspace_namespace_ids.get(&second_workspace_id),
+            Some(&namespace_id)
+        );
+        assert!(state.namespaces.contains_key(&namespace_id));
+    }
 
     #[test]
     fn new_pane_size_uses_headless_size_before_first_view() {

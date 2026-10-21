@@ -548,6 +548,32 @@ mod tests {
     }
 
     #[test]
+    fn a_handoff_preserves_explicit_workspace_namespace() {
+        let mut state = crate::app::AppState::test_new();
+        state.workspaces = vec![crate::workspace::Workspace::test_new("handoff")];
+        state.ensure_test_terminals();
+        let namespace_id = state.ensure_workspace_namespace(0).unwrap();
+        let snapshot = crate::persist::capture_with_namespaces(
+            &state.workspaces,
+            &state.terminals,
+            &crate::terminal::TerminalRuntimeRegistry::new(),
+            Some(0),
+            0,
+            &state.workspace_namespace_ids,
+            &state.namespaces,
+        );
+        let manifest = manifest_for(snapshot, Vec::new(), None, None, None, None);
+        let encoded = serde_json::to_vec(&manifest).expect("manifest should serialize");
+        let decoded: HandoffManifest =
+            serde_json::from_slice(&encoded).expect("manifest should deserialize");
+
+        assert_eq!(
+            decoded.snapshot.workspaces[0].namespace_id.as_deref(),
+            Some(namespace_id.as_str())
+        );
+    }
+
+    #[test]
     fn a_handoff_carries_an_api_set_window_title() {
         let manifest = manifest_for(
             empty_snapshot(),

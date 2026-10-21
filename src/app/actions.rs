@@ -687,6 +687,11 @@ impl AppState {
             .active
             .and_then(|idx| self.workspaces.get(idx))
             .map(|ws| ws.id.clone());
+        let closed_workspace_ids = close_indices
+            .iter()
+            .filter_map(|idx| self.workspaces.get(*idx).map(|ws| ws.id.clone()))
+            .collect::<Vec<_>>();
+        self.remove_workspace_namespace_memberships(&closed_workspace_ids);
         self.remove_plugin_pane_records(pane_ids);
         for idx in close_indices.iter().rev() {
             self.workspaces.remove(*idx);
@@ -2086,6 +2091,8 @@ impl AppState {
                 .and_then(|idx| self.workspaces.get(idx))
                 .map(|ws| ws.id.clone());
             let selected_workspace_id = self.workspaces.get(self.selected).map(|ws| ws.id.clone());
+            let closed_workspace_id = self.workspaces[ws_idx].id.clone();
+            self.remove_workspace_namespace_memberships(std::slice::from_ref(&closed_workspace_id));
             self.workspaces.remove(ws_idx);
             self.remove_unattached_terminal_ids(workspace_terminal_ids);
             if self.workspaces.is_empty() {

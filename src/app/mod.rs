@@ -422,39 +422,48 @@ impl App {
         let session_writer = Arc::new(std::sync::Mutex::new(crate::persist::SessionWriter::new(
             policy.restore_session && snapshot.is_none(),
         )));
-        let (workspaces, active, selected) = if let Some(snap) = snapshot {
-            let history = config
-                .experimental
-                .pane_history
-                .then(crate::persist::load_history)
-                .flatten();
-            let (ws, terminals, terminal_runtimes) = crate::persist::restore(
-                &snap,
-                history.as_ref(),
-                24,
-                80,
-                config.advanced.scrollback_limit_bytes,
-                &config.terminal.default_shell,
-                config.terminal.shell_mode,
-                config.session.resume_agents_on_restore,
-                event_tx.clone(),
-                render_notify.clone(),
-                render_dirty.clone(),
-            );
-            restored_terminals = terminals;
-            restored_terminal_runtimes = terminal_runtimes.into();
-            if ws.is_empty() {
-                crate::logging::session_restored(0, "empty");
-                (Vec::new(), None, 0)
+        let (workspaces, active, selected, namespaces, workspace_namespace_ids) =
+            if let Some(snap) = snapshot {
+                let history = config
+                    .experimental
+                    .pane_history
+                    .then(crate::persist::load_history)
+                    .flatten();
+                let (ws, terminals, terminal_runtimes) = crate::persist::restore(
+                    &snap,
+                    history.as_ref(),
+                    24,
+                    80,
+                    config.advanced.scrollback_limit_bytes,
+                    &config.terminal.default_shell,
+                    config.terminal.shell_mode,
+                    config.session.resume_agents_on_restore,
+                    event_tx.clone(),
+                    render_notify.clone(),
+                    render_dirty.clone(),
+                );
+                restored_terminals = terminals;
+                restored_terminal_runtimes = terminal_runtimes.into();
+                let namespace_state =
+                    state::AppState::namespace_state_for_workspaces(&ws, Some(&snap));
+                if ws.is_empty() {
+                    crate::logging::session_restored(0, "empty");
+                    (Vec::new(), None, 0, namespace_state.0, namespace_state.1)
+                } else {
+                    crate::logging::session_restored(ws.len(), "ok");
+                    let active = snap.active.filter(|&i| i < ws.len());
+                    let selected = snap.selected.min(ws.len().saturating_sub(1));
+                    (ws, active, selected, namespace_state.0, namespace_state.1)
+                }
             } else {
-                crate::logging::session_restored(ws.len(), "ok");
-                let active = snap.active.filter(|&i| i < ws.len());
-                let selected = snap.selected.min(ws.len().saturating_sub(1));
-                (ws, active, selected)
-            }
-        } else {
-            (Vec::new(), None, 0)
-        };
+                (
+                    Vec::new(),
+                    None,
+                    0,
+                    std::collections::HashMap::new(),
+                    std::collections::HashMap::new(),
+                )
+            };
 
         let agent_panel_sort = agent_panel_sort_from_config(config.ui.agent_panel_sort);
 
@@ -497,6 +506,8 @@ impl App {
             pane_id_aliases: std::collections::HashMap::new(),
             public_pane_id_aliases: std::collections::HashMap::new(),
             workspaces,
+            namespaces,
+            workspace_namespace_ids,
             active,
             previous_pane_focus: None,
             selected,
@@ -723,8 +734,12 @@ impl App {
             app.render_dirty.clone(),
         )?;
         let pane_id_aliases = crate::persist::handoff_pane_aliases(snapshot, &workspaces);
+        let (namespaces, workspace_namespace_ids) =
+            state::AppState::namespace_state_for_workspaces(&workspaces, Some(snapshot));
 
         app.state.pane_id_aliases = pane_id_aliases;
+        app.state.namespaces = namespaces;
+        app.state.workspace_namespace_ids = workspace_namespace_ids;
         app.state.workspaces = workspaces;
         app.state.terminals = terminals;
         app.terminal_runtimes = runtimes.into();

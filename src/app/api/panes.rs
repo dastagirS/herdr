@@ -1163,6 +1163,12 @@ impl App {
                 .insert(previous_pane_id.clone(), source_pane_id);
         }
 
+        let source_namespace_id =
+            if matches!(&resolved, ResolvedPaneMoveDestination::NewWorkspace { .. }) {
+                self.state.ensure_workspace_namespace(source_ws_idx)
+            } else {
+                None
+            };
         let mut closed_workspace_id = None;
         if source_workspace_empty && cross_workspace {
             self.state.workspaces.remove(source_ws_idx);
@@ -1262,12 +1268,26 @@ impl App {
                 );
                 self.state.workspaces.push(workspace);
                 let target_ws_idx = self.state.workspaces.len() - 1;
+                if let Some(namespace_id) = source_namespace_id.as_deref() {
+                    if let Err(message) = self
+                        .state
+                        .move_workspace_to_namespace(target_ws_idx, namespace_id)
+                    {
+                        return encode_error(id, "workspace_namespace_move_failed", message);
+                    }
+                }
                 created_workspace = true;
                 created_tab = true;
                 (target_ws_idx, 0, moved_pane_id)
             }
         };
 
+        if closed_workspace_id.is_some() {
+            self.state
+                .remove_workspace_namespace_memberships(std::slice::from_ref(
+                    &previous_workspace_id,
+                ));
+        }
         if focus || self.state.active.is_none() {
             self.state
                 .switch_workspace_tab(target_ws_idx, target_tab_idx);
@@ -3620,6 +3640,7 @@ mod tests {
         seed_terminal_states(&mut app);
         let source_public = app.public_pane_id(0, source).unwrap();
         let source_workspace = app.public_workspace_id(0);
+        let source_namespace_id = app.state.ensure_workspace_namespace(0).unwrap();
 
         let response = app.handle_pane_move(
             "req".into(),
@@ -3664,6 +3685,10 @@ mod tests {
         assert_ne!(move_result.pane.pane_id, source_public);
         assert_eq!(move_result.pane.terminal_id, source_terminal.to_string());
         assert_eq!(app.state.workspaces.len(), 1);
+        assert_eq!(
+            app.state.workspace_namespace_id(0),
+            Some(source_namespace_id)
+        );
         assert_eq!(
             app.state.workspaces[0].tabs[0].terminal_id(source),
             Some(&source_terminal)

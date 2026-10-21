@@ -387,6 +387,8 @@ fn mobile_background_workspace_uses_its_own_active_tab_status() {
     });
     projected.workspaces.push(ClientShellWorkspace {
         workspace_id: "ws_2".into(),
+        namespace_id: None,
+        namespace_label: None,
         active_tab_id: "tab_3".into(),
         new_workspace_cwd: "/feature".into(),
         number: 2,
@@ -586,6 +588,8 @@ fn mobile_previous_workspace_action_wraps_across_expanded_entries() {
     for index in 2..=3 {
         projected.workspaces.push(ClientShellWorkspace {
             workspace_id: format!("ws_{index}"),
+            namespace_id: None,
+            namespace_label: None,
             active_tab_id: format!("tab_{index}"),
             new_workspace_cwd: "/tmp".into(),
             number: index,
@@ -626,6 +630,8 @@ fn mobile_switcher_scroll_close_and_width_transition_clear_mobile_hits() {
     for index in 2..=8 {
         projected.workspaces.push(ClientShellWorkspace {
             workspace_id: format!("ws_{index}"),
+            namespace_id: None,
+            namespace_label: None,
             active_tab_id: format!("tab_{index}"),
             new_workspace_cwd: "/tmp".into(),
             number: index,

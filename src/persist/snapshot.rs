@@ -9,7 +9,7 @@ use crate::terminal::TerminalRuntimeRegistry;
 use crate::workspace::Workspace;
 
 /// Current snapshot format version.
-pub(super) const SNAPSHOT_VERSION: u32 = 3;
+pub(super) const SNAPSHOT_VERSION: u32 = 4;
 
 /// Serializable snapshot of the entire herdr session.
 #[derive(Serialize, Deserialize)]
@@ -54,6 +54,13 @@ pub struct WorkspaceSnapshot {
     pub id: Option<String>,
     #[serde(default)]
     pub custom_name: Option<String>,
+    /// Stable namespace membership; absent in pre-namespace snapshots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace_id: Option<String>,
+    /// Namespace display label, persisted with membership rather than inferred
+    /// from the current workspace directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace_label: Option<String>,
     pub identity_cwd: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_space: Option<crate::workspace::WorktreeSpaceMembership>,
@@ -167,6 +174,8 @@ impl From<LegacyWorkspaceSnapshot> for WorkspaceSnapshot {
         Self {
             id: None,
             custom_name: snap.custom_name,
+            namespace_id: None,
+            namespace_label: None,
             identity_cwd,
             worktree_space: None,
             public_pane_numbers: HashMap::new(),
@@ -260,6 +269,7 @@ fn first_pane_id_in_layout(layout: &LayoutSnapshot) -> Option<u32> {
 }
 
 /// Capture the current app state into a serializable snapshot.
+#[cfg(test)]
 pub fn capture(
     workspaces: &[Workspace],
     terminals: &std::collections::HashMap<
@@ -270,11 +280,45 @@ pub fn capture(
     active: Option<usize>,
     selected: usize,
 ) -> SessionSnapshot {
+    capture_with_namespaces(
+        workspaces,
+        terminals,
+        terminal_runtimes,
+        active,
+        selected,
+        &std::collections::HashMap::new(),
+        &std::collections::HashMap::new(),
+    )
+}
+
+/// Capture session structure and explicit namespace membership together. The
+/// compatibility wrapper above remains useful for persistence-focused tests
+/// and callers that do not maintain an AppState namespace registry.
+pub fn capture_with_namespaces(
+    workspaces: &[Workspace],
+    terminals: &std::collections::HashMap<
+        crate::terminal::TerminalId,
+        crate::terminal::TerminalState,
+    >,
+    terminal_runtimes: &TerminalRuntimeRegistry,
+    active: Option<usize>,
+    selected: usize,
+    workspace_namespace_ids: &std::collections::HashMap<String, String>,
+    namespaces: &std::collections::HashMap<String, crate::app::state::WorkspaceNamespace>,
+) -> SessionSnapshot {
     SessionSnapshot {
         version: SNAPSHOT_VERSION,
         workspaces: workspaces
             .iter()
-            .map(|workspace| capture_workspace(workspace, terminals, terminal_runtimes))
+            .map(|workspace| {
+                capture_workspace(
+                    workspace,
+                    terminals,
+                    terminal_runtimes,
+                    workspace_namespace_ids,
+                    namespaces,
+                )
+            })
             .collect(),
         active,
         selected,
@@ -284,6 +328,17 @@ pub fn capture(
     }
 }
 
+fn persistence_fallback_cwd(preferred: Option<&std::path::Path>) -> PathBuf {
+    preferred
+        .filter(|cwd| crate::pane::is_usable_cwd(cwd))
+        .map(PathBuf::from)
+        .or_else(|| {
+            let cwd = std::env::current_dir().ok()?;
+            crate::pane::is_usable_cwd(&cwd).then_some(cwd)
+        })
+        .unwrap_or_else(|| PathBuf::from("/"))
+}
+
 fn capture_workspace(
     ws: &Workspace,
     terminals: &std::collections::HashMap<
@@ -291,20 +346,35 @@ fn capture_workspace(
         crate::terminal::TerminalState,
     >,
     terminal_runtimes: &TerminalRuntimeRegistry,
+    workspace_namespace_ids: &std::collections::HashMap<String, String>,
+    namespaces: &std::collections::HashMap<String, crate::app::state::WorkspaceNamespace>,
 ) -> WorkspaceSnapshot {
+    let fallback_cwd = persistence_fallback_cwd(Some(&ws.identity_cwd));
     let tabs: Vec<_> = ws
         .tabs
         .iter()
-        .map(|tab| capture_tab(tab, terminals, terminal_runtimes))
+        .map(|tab| capture_tab(tab, terminals, terminal_runtimes, &fallback_cwd))
         .collect();
     let identity_cwd = tabs
         .first()
         .and_then(|tab| tab.root_pane.and_then(|id| tab.panes.get(&id)))
         .map(|pane| pane.cwd.clone())
-        .unwrap_or_else(|| ws.identity_cwd.clone());
+        .unwrap_or_else(|| fallback_cwd.clone());
+    let namespace_id = workspace_namespace_ids
+        .get(&ws.id)
+        .cloned()
+        .unwrap_or_else(|| format!("workspace:{}", ws.id));
+    let namespace_label = namespaces
+        .get(&namespace_id)
+        .map(|namespace| namespace.label.clone())
+        .filter(|label| !label.is_empty())
+        .or_else(|| ws.custom_name.clone())
+        .or_else(|| (!ws.cached_auto_label.is_empty()).then(|| ws.cached_auto_label.clone()));
     WorkspaceSnapshot {
         id: Some(ws.id.clone()),
         custom_name: ws.custom_name.clone(),
+        namespace_id: Some(namespace_id),
+        namespace_label,
         identity_cwd,
         worktree_space: ws.worktree_space.clone(),
         public_pane_numbers: ws
@@ -327,6 +397,7 @@ fn capture_tab(
         crate::terminal::TerminalState,
     >,
     terminal_runtimes: &TerminalRuntimeRegistry,
+    fallback_cwd: &std::path::Path,
 ) -> TabSnapshot {
     let mut panes = HashMap::new();
     for id in tab.panes.keys() {
@@ -335,8 +406,17 @@ fn capture_tab(
         let cwd = terminal_id
             .and_then(|id| terminal_runtimes.get(id))
             .and_then(|runtime| runtime.cwd_for_persistence())
-            .or_else(|| terminal.map(|terminal| terminal.cwd.clone()))
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| "/".into()));
+            .or_else(|| {
+                terminal
+                    .filter(|terminal| terminal.restore_error.is_some())
+                    .map(|terminal| terminal.cwd.clone())
+            })
+            .or_else(|| {
+                terminal
+                    .map(|terminal| terminal.cwd.clone())
+                    .filter(|cwd| crate::pane::is_usable_cwd(cwd))
+            })
+            .unwrap_or_else(|| fallback_cwd.to_path_buf());
         let label = terminal.and_then(|terminal| terminal.manual_label.clone());
         let (agent_name, managed_agent_kind) = terminal
             .filter(|terminal| !terminal.managed_agent_launch_pending())
@@ -570,12 +650,14 @@ mod tests {
         state: &AppState,
         terminal_runtimes: &TerminalRuntimeRegistry,
     ) -> SessionSnapshot {
-        capture(
+        capture_with_namespaces(
             &state.workspaces,
             &state.terminals,
             terminal_runtimes,
             state.active,
             state.selected,
+            &state.workspace_namespace_ids,
+            &state.namespaces,
         )
     }
 
@@ -654,6 +736,84 @@ mod tests {
     }
 
     #[test]
+    fn namespace_membership_round_trips_without_cwd_identity() {
+        let mut state = state_with_workspaces(&["root", "unrelated"]);
+        let namespace_id = state.ensure_workspace_namespace(0).unwrap();
+        state
+            .assign_new_workspace_namespace(1, Some(namespace_id.clone()), "ignored".into())
+            .unwrap();
+        let unrelated_cwd =
+            std::env::temp_dir().join(format!("herdr-namespace-unrelated-{}", std::process::id()));
+        std::fs::create_dir_all(&unrelated_cwd).unwrap();
+        state.workspaces[1].identity_cwd = unrelated_cwd.clone();
+        let second_root = state.workspaces[1].tabs[0].root_pane;
+        let second_terminal_id = state.workspaces[1]
+            .terminal_id(second_root)
+            .unwrap()
+            .clone();
+        state.terminals.get_mut(&second_terminal_id).unwrap().cwd = unrelated_cwd.clone();
+
+        let captured = capture_from_state(&state);
+        assert_eq!(
+            captured.workspaces[0].namespace_id,
+            Some(namespace_id.clone())
+        );
+        assert_eq!(
+            captured.workspaces[1].namespace_id,
+            Some(namespace_id.clone())
+        );
+        assert_ne!(
+            captured.workspaces[0].identity_cwd,
+            captured.workspaces[1].identity_cwd
+        );
+
+        let restored = parse_snapshot(&serde_json::to_string(&captured).unwrap()).unwrap();
+        let (_, memberships) =
+            AppState::namespace_state_for_workspaces(&state.workspaces, Some(&restored));
+        assert_eq!(
+            memberships.get(&state.workspaces[1].id),
+            Some(&namespace_id)
+        );
+        std::fs::remove_dir_all(unrelated_cwd).unwrap();
+    }
+
+    #[test]
+    fn capture_falls_back_when_terminal_cwd_is_not_a_directory() {
+        let mut state = state_with_workspaces(&["invalid-cwd"]);
+        let invalid_cwd =
+            std::env::temp_dir().join(format!("herdr-invalid-cwd-{}", std::process::id()));
+        state.workspaces[0].identity_cwd = invalid_cwd.clone();
+        let root = state.workspaces[0].tabs[0].root_pane;
+        let terminal_id = state.workspaces[0].terminal_id(root).unwrap().clone();
+        state.terminals.get_mut(&terminal_id).unwrap().cwd = invalid_cwd.clone();
+
+        let captured = capture_from_state(&state);
+        let pane = &captured.workspaces[0].tabs[0].panes[&root.raw()];
+        assert_ne!(pane.cwd, invalid_cwd);
+        assert!(crate::pane::is_usable_cwd(&pane.cwd));
+        assert_eq!(captured.workspaces[0].identity_cwd, pane.cwd);
+    }
+
+    #[test]
+    fn legacy_snapshot_without_workspace_ids_migrates_cwd_membership_once() {
+        let state = state_with_workspaces(&["first", "second"]);
+        let mut legacy = capture_from_state(&state);
+        for workspace in &mut legacy.workspaces {
+            workspace.id = None;
+            workspace.namespace_id = None;
+            workspace.namespace_label = None;
+        }
+
+        let (_, memberships) =
+            AppState::namespace_state_for_workspaces(&state.workspaces, Some(&legacy));
+        assert_eq!(memberships.len(), 2);
+        assert_eq!(
+            memberships.get(&state.workspaces[0].id),
+            memberships.get(&state.workspaces[1].id)
+        );
+    }
+
+    #[test]
     fn round_trip_empty_session() {
         let snap = SessionSnapshot {
             version: SNAPSHOT_VERSION,
@@ -726,6 +886,8 @@ mod tests {
             workspaces: vec![WorkspaceSnapshot {
                 id: Some("wproj".to_string()),
                 custom_name: Some("pi-mono".to_string()),
+                namespace_id: None,
+                namespace_label: None,
                 identity_cwd: PathBuf::from("/home/can/Projects/herdr"),
                 worktree_space: None,
                 public_pane_numbers: HashMap::from([(0, 1), (1, 2)]),
@@ -1166,24 +1328,30 @@ mod tests {
     fn capture_contract_tracks_workspace_identity_and_pane_cwds() {
         let mut state = state_with_workspaces(&["one"]);
         let root = state.workspaces[0].tabs[0].root_pane;
-        state.workspaces[0].identity_cwd = PathBuf::from("/tmp/pion");
+        let base = std::env::temp_dir().join(format!("herdr-capture-cwds-{}", std::process::id()));
+        let pion = base.join("pion");
+        let herdr = base.join("herdr");
+        std::fs::create_dir_all(&pion).unwrap();
+        std::fs::create_dir_all(&herdr).unwrap();
+        state.workspaces[0].identity_cwd = pion.clone();
         let second = state.workspaces[0].test_split(Direction::Horizontal);
         state.ensure_test_terminals();
         let root_terminal_id = state.workspaces[0].tabs[0].panes[&root]
             .attached_terminal_id
             .clone();
-        state.terminals.get_mut(&root_terminal_id).unwrap().cwd = PathBuf::from("/tmp/pion");
+        state.terminals.get_mut(&root_terminal_id).unwrap().cwd = pion.clone();
         let second_terminal_id = state.workspaces[0].tabs[0].panes[&second]
             .attached_terminal_id
             .clone();
-        state.terminals.get_mut(&second_terminal_id).unwrap().cwd = PathBuf::from("/tmp/herdr");
+        state.terminals.get_mut(&second_terminal_id).unwrap().cwd = herdr.clone();
 
         let snapshot = capture_from_state(&state);
         let workspace = &snapshot.workspaces[0];
         let tab = &workspace.tabs[0];
-        assert_eq!(workspace.identity_cwd, PathBuf::from("/tmp/pion"));
-        assert_eq!(tab.panes[&root.raw()].cwd, PathBuf::from("/tmp/pion"));
-        assert_eq!(tab.panes[&second.raw()].cwd, PathBuf::from("/tmp/herdr"));
+        assert_eq!(workspace.identity_cwd, pion);
+        assert_eq!(tab.panes[&root.raw()].cwd, workspace.identity_cwd);
+        assert_eq!(tab.panes[&second.raw()].cwd, herdr);
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[tokio::test]
@@ -1427,6 +1595,8 @@ mod tests {
             workspaces: vec![WorkspaceSnapshot {
                 id: Some("test-ws".to_string()),
                 custom_name: Some("fallback test".to_string()),
+                namespace_id: None,
+                namespace_label: None,
                 identity_cwd: PathBuf::from("/tmp"),
                 worktree_space: None,
                 public_pane_numbers: HashMap::new(),

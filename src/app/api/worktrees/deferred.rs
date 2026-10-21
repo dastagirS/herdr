@@ -448,6 +448,9 @@ impl App {
             Self::send_api_response(api.respond_to, encode_error(api.id, err.code, err.message));
             return;
         }
+        let source_namespace_id = source
+            .workspace_idx
+            .and_then(|workspace_idx| self.state.ensure_workspace_namespace(workspace_idx));
 
         let (ws_idx, created_workspace) =
             if let Some(ws_idx) = self.open_workspace_idx_for_checkout(&result.path) {
@@ -471,6 +474,17 @@ impl App {
                     }
                 }
             };
+        if created_workspace {
+            if let Some(namespace_id) = source_namespace_id.as_deref() {
+                if let Err(message) = self.state.move_workspace_to_namespace(ws_idx, namespace_id) {
+                    Self::send_api_response(
+                        api.respond_to,
+                        encode_error(api.id, "workspace_namespace_move_failed", message),
+                    );
+                    return;
+                }
+            }
+        }
 
         self.mark_worktree_membership(
             &source,
@@ -658,14 +672,48 @@ impl App {
             };
             let runtime_missing = self.terminal_runtimes.get(&terminal_id).is_none();
             if runtime_missing {
-                let workspace = &self.state.workspaces[ws_idx];
-                let current_checkout = workspace
-                    .worktree_space()
-                    .map(|space| &space.checkout_path)
-                    .unwrap_or(&workspace.identity_cwd);
-                if crate::worktree::canonical_or_original(current_checkout) != removed_checkout {
+                let (current_checkout, repo_root, identity_cwd) = {
+                    let workspace = &self.state.workspaces[ws_idx];
+                    (
+                        workspace
+                            .worktree_space()
+                            .map(|space| space.checkout_path.clone())
+                            .unwrap_or_else(|| workspace.identity_cwd.clone()),
+                        workspace
+                            .worktree_space()
+                            .map(|space| space.repo_root.clone()),
+                        workspace.identity_cwd.clone(),
+                    )
+                };
+                let terminal_cwd = self
+                    .state
+                    .terminals
+                    .get(&terminal_id)
+                    .map(|terminal| terminal.cwd.clone());
+                let replacement_cwd = if crate::worktree::canonical_or_original(&current_checkout)
+                    != removed_checkout
+                    && crate::pane::is_usable_cwd(&current_checkout)
+                {
+                    Some(current_checkout)
+                } else {
+                    terminal_cwd
+                        .filter(|cwd| crate::pane::is_usable_cwd(cwd))
+                        .or_else(|| repo_root.filter(|cwd| crate::pane::is_usable_cwd(cwd)))
+                        .or_else(|| {
+                            crate::pane::is_usable_cwd(&identity_cwd).then_some(identity_cwd)
+                        })
+                        .or_else(|| {
+                            let cwd = std::env::current_dir().ok()?;
+                            crate::pane::is_usable_cwd(&cwd).then_some(cwd)
+                        })
+                        .or_else(|| {
+                            let cwd = std::path::PathBuf::from("/");
+                            crate::pane::is_usable_cwd(&cwd).then_some(cwd)
+                        })
+                };
+                if let Some(cwd) = replacement_cwd {
                     if let Some(terminal) = self.state.terminals.get_mut(&terminal_id) {
-                        terminal.cwd = current_checkout.clone();
+                        terminal.cwd = cwd;
                     }
                 }
                 if self

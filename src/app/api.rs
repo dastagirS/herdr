@@ -590,6 +590,14 @@ impl App {
         };
 
         let cwd = terminal.cwd.clone();
+        if !crate::pane::is_usable_cwd(&cwd) {
+            tracing::warn!(
+                pane = pane_id.raw(),
+                terminal = %terminal_id,
+                "refusing to respawn a shell in an unavailable cwd"
+            );
+            return false;
+        }
         let (rows, cols) = self
             .terminal_runtimes
             .get(&terminal_id)
@@ -1064,6 +1072,9 @@ impl App {
             Method::WorkspaceCreate(params) => {
                 return self.handle_workspace_create(request.id, params);
             }
+            Method::WorkspaceCreateInNamespace(params) => {
+                return self.handle_workspace_create_in_namespace(request.id, params);
+            }
             Method::WorkspaceFocus(target) => {
                 return self.handle_workspace_focus(request.id, target);
             }
@@ -1255,6 +1266,9 @@ impl App {
             }
             Method::PluginPaneClose(params) => {
                 return self.handle_plugin_pane_close(request.id, params);
+            }
+            Method::WorkspaceNamespaceMove(params) => {
+                return self.handle_workspace_namespace_move(request.id, params);
             }
             _ => {
                 return responses::encode_error(

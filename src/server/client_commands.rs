@@ -254,6 +254,14 @@ mod tests {
             actual.remove("pane.link.resolve").as_deref(),
             Some("f5e4a3e01453ae7b188f127ce951c12c20e0bebcc17cc364eeb6d1a01fd5bf81")
         );
+        assert_eq!(
+            actual.remove("workspace.create_in_namespace").as_deref(),
+            Some("4ee82252cacab7746665c8c797502237e52c6600ec3b60fd20784e1aa2f216f7")
+        );
+        assert_eq!(
+            actual.remove("workspace.namespace_move").as_deref(),
+            Some("e861b115f4a031df1bd25259a7ef46647c23c7d78b7e4e69d1298c40ddac1b77")
+        );
 
         assert_eq!(
             actual, expected,
