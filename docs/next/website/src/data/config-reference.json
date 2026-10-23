@@ -503,7 +503,13 @@
           "key": "keys.new_workspace",
           "type": "keybinding",
           "default": "\"prefix+shift+n\"",
-          "description": "Create a new workspace."
+          "description": "Create a sub-workspace in the selected Space."
+        },
+        {
+          "key": "keys.new_root_workspace",
+          "type": "keybinding",
+          "default": "\"prefix+shift+m\"",
+          "description": "Create a root workspace in a new Space."
         },
         {
           "key": "keys.new_worktree",

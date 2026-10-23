@@ -19,6 +19,7 @@ pub(crate) enum KeybindMatch {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KeybindAction {
     NewWorkspace,
+    NewRootWorkspace,
     NewWorktree,
     OpenWorktree,
     RemoveWorktree,
@@ -100,6 +101,10 @@ pub(crate) fn resolve_non_indexed_action(
         (&keybinds.settings, KeybindAction::Settings),
         (&keybinds.workspace_picker, KeybindAction::WorkspacePicker),
         (&keybinds.new_workspace, KeybindAction::NewWorkspace),
+        (
+            &keybinds.new_root_workspace,
+            KeybindAction::NewRootWorkspace,
+        ),
         (&keybinds.new_worktree, KeybindAction::NewWorktree),
         (&keybinds.open_worktree, KeybindAction::OpenWorktree),
         (&keybinds.remove_worktree, KeybindAction::RemoveWorktree),

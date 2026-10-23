@@ -370,9 +370,8 @@ impl ClientShellState {
             .and_then(|workspace| workspace.namespace_id.clone())
     }
 
-    pub(super) fn open_new_workspace_overlay(&mut self) {
+    pub(super) fn open_new_workspace_overlay(&mut self, namespace_id: Option<String>) {
         let source_workspace_id = self.workspace_action_id();
-        let namespace_id = self.workspace_action_namespace_id();
         let cwd = self.snapshot.as_deref().and_then(|snapshot| {
             let workspace_id = source_workspace_id.as_deref()?;
             snapshot

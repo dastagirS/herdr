@@ -1427,6 +1427,44 @@ fn named_workspace_overlay_targets_projected_source_workspace() {
 }
 
 #[test]
+fn root_workspace_keybind_starts_a_new_space() {
+    let mut projected = snapshot();
+    projected.workspaces[0].namespace_id = Some("namespace:shared".into());
+    projected.workspaces[0].namespace_label = Some("shared".into());
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(projected));
+
+    let mut sub_workspace = ClientShellInput::default();
+    state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::NewWorkspace),
+        &mut sub_workspace,
+    );
+    let [ClientShellAction::Endpoint { request, .. }] = &sub_workspace.actions[..] else {
+        panic!("sub-workspace should use endpoint API");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::WorkspaceCreateInNamespace(params)
+            if params.source_workspace_id.as_deref() == Some("ws_1")
+                && params.namespace_id == "namespace:shared"
+    ));
+
+    let mut root_workspace = ClientShellInput::default();
+    state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::NewRootWorkspace),
+        &mut root_workspace,
+    );
+    let [ClientShellAction::Endpoint { request, .. }] = &root_workspace.actions[..] else {
+        panic!("root workspace should use endpoint API");
+    };
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::WorkspaceCreate(params)
+            if params.source_workspace_id.as_deref() == Some("ws_1")
+    ));
+}
+
+#[test]
 fn navigate_mode_selects_workspace_locally_then_focuses_by_stable_id() {
     let mut snapshot = snapshot();
     let mut second = snapshot.workspaces[0].clone();

@@ -13,7 +13,7 @@ fn shell(field: usize) -> ClientShellState {
     state.set_pane_surface(frame);
     state.compose(106, 30).expect("initial shell");
     match field {
-        0 => state.open_new_workspace_overlay(),
+        0 => state.open_new_workspace_overlay(None),
         1 => state.open_rename_workspace_overlay(),
         2 => state.open_new_tab_overlay(),
         3 => state.open_rename_tab_overlay(),

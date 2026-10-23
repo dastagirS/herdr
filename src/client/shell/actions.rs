@@ -80,14 +80,25 @@ impl ClientShellState {
                     outcome.resize = true;
                     return;
                 }
-                if action == crate::input::KeybindAction::NewWorkspace {
+                if matches!(
+                    action,
+                    crate::input::KeybindAction::NewWorkspace
+                        | crate::input::KeybindAction::NewRootWorkspace
+                ) {
+                    let namespace_id = match action {
+                        crate::input::KeybindAction::NewWorkspace => {
+                            self.workspace_action_namespace_id()
+                        }
+                        crate::input::KeybindAction::NewRootWorkspace => None,
+                        _ => unreachable!("workspace creation action was checked above"),
+                    };
                     if self.config.prompt_new_workspace_name {
-                        self.open_new_workspace_overlay();
+                        self.open_new_workspace_overlay(namespace_id);
                     } else {
                         self.push_endpoint_method(
                             super::overlay_input::workspace_create_method(
                                 self.workspace_action_id(),
-                                self.workspace_action_namespace_id(),
+                                namespace_id,
                                 None,
                                 true,
                                 None,

@@ -354,6 +354,7 @@ pub struct Keybinds {
     pub help: ActionKeybinds,
     pub settings: ActionKeybinds,
     pub new_workspace: ActionKeybinds,
+    pub new_root_workspace: ActionKeybinds,
     pub new_worktree: ActionKeybinds,
     pub open_worktree: ActionKeybinds,
     pub remove_worktree: ActionKeybinds,
@@ -537,6 +538,7 @@ impl Config {
             help: empty_action!(),
             settings: empty_action!(),
             new_workspace: empty_action!(),
+            new_root_workspace: empty_action!(),
             new_worktree: empty_action!(),
             open_worktree: empty_action!(),
             remove_worktree: empty_action!(),
@@ -666,6 +668,7 @@ impl Config {
             apply_action!(keybinds.help, help, source);
             apply_action!(keybinds.settings, settings, source);
             apply_action!(keybinds.new_workspace, new_workspace, source);
+            apply_action!(keybinds.new_root_workspace, new_root_workspace, source);
             apply_action!(keybinds.new_worktree, new_worktree, source);
             apply_action!(keybinds.open_worktree, open_worktree, source);
             apply_action!(keybinds.remove_worktree, remove_worktree, source);
@@ -1659,6 +1662,18 @@ next_tab = "prefix+n"
             vec![BindingTrigger::Prefix((
                 KeyCode::Char('n'),
                 KeyModifiers::empty()
+            ))]
+        );
+    }
+
+    #[test]
+    fn new_root_workspace_defaults_to_prefix_shift_m() {
+        let kb = Config::default().keybinds();
+        assert_eq!(
+            binding_triggers(&kb.new_root_workspace),
+            vec![BindingTrigger::Prefix((
+                KeyCode::Char('m'),
+                KeyModifiers::SHIFT
             ))]
         );
     }
