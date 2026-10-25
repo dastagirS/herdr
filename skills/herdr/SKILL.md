@@ -54,6 +54,25 @@ Choose the primitive that matches the job:
 
 A pane exists whether or not it contains an agent. `agent start` requires an existing available shell pane and never creates, splits, or moves layout. Use pane commands for ordinary processes. Use agent commands when Herdr must validate agent identity or interpret `idle`, `working`, `blocked`, `done`, and `unknown` lifecycle states.
 
+## Understand Spaces and workspace membership
+
+Herdr calls a persistent group of workspaces a **Space**. The socket API calls the same concept a **namespace**. Membership is stored explicitly by a stable `namespace_id`; it is not inferred from the current directory, Git repository, worktree path, or a shell's `cd` command.
+
+- `cd` changes only the pane's runtime working directory. It never moves the workspace to another Space.
+- `herdr workspace list` reports `namespace_id` and `namespace_label`; use those fields to understand grouping instead of grouping workspaces by `cwd` or path.
+- `herdr workspace create` creates a root workspace in a new Space by default. The API method `workspace.create_in_namespace` creates a workspace in an existing Space and requires the exact `namespace_id` returned by Herdr. `workspace.namespace_move` is the explicit API operation for moving membership.
+- Closing a workspace removes only that workspace from its Space. An empty Space is removed; sibling workspaces are not reassigned.
+- Session persistence and live handoff preserve namespace membership and stable workspace, tab, and pane IDs. Do not reconstruct membership from paths after a restart or handoff.
+
+The default TUI keybinds distinguish the two creation modes:
+
+- `prefix+shift+n`: create a sub-workspace in the current Space.
+- `prefix+shift+m`: create a root workspace in a new Space.
+
+Keybinds are configurable under `[keys]`; `prefix+?` shows the active bindings. For agent automation, prefer the CLI/API creation methods and explicit returned IDs over simulating TUI keypresses.
+
+Deleted or non-directory CWDs are not valid launch or ordinary persistence locations. During persistence, restore, shell respawn, and worktree recovery, Herdr falls back to the last usable runtime/workspace/current-directory path or the filesystem root when possible. Treat a reported CWD as a hint to inspect, not as proof that the path still exists.
+
 Agent commands accept either a unique live agent name or the pane ID currently hosting that agent. They do not accept terminal IDs or bare agent-kind labels. Names must match `[a-z][a-z0-9_-]{0,31}` and be unique among live agents. A name follows the current pane occupant and is cleared when that agent exits, is released, or is replaced. Suspending an agent with Ctrl+Z and running a non-agent command preserves its identity while the exact process remains alive. This does not preserve the original identity across another recognized agent taking over. A retained identity does not mean the agent is in the foreground; inspect the pane before sending input.
 
 `idle` and `done` normally indicate the agent is ready for input; neither guarantees that an unfamiliar approval dialog was recognized or that a retained agent is in the foreground. The CLI/API uses the server's seen state to distinguish them; explicit focus commands mark the target seen, while reads do not. Each TUI client tracks viewed completions independently, so its Done badge can differ from the CLI or another client's badge. Antigravity and Grok can be idle while background tasks or subagents keep running, so a settled-state wait is not proof those jobs have finished. `blocked` means Herdr recognized an approval or question UI. `unknown` means an agent is present but Herdr cannot classify it confidently; it does not prove completion.
